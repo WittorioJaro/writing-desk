@@ -19,29 +19,67 @@ public enum IdeasInbox {
         }
     }
 
-    /// Returns the number of new ideas added.
-    @discardableResult
-    public static func importInbox(store: Store, into state: inout AppState, now: Date = Date()) throws -> Int {
+    public struct ImportResult: Equatable {
+        public var added = 0
+        public var archived: [String] = []
+        /// Files left in the inbox (or not archived), with the reason. Safe to retry.
+        public var errors: [String] = []
+    }
+
+    /// Imports inbox files one at a time: read -> add ideas -> **persist** -> archive.
+    ///
+    /// - A file is archived only after its ideas were saved, so a failed read or save leaves the original in `inbox/`.
+    /// - If a save fails, that file's ideas are rolled back and the import stops; files saved earlier stay saved and archived.
+    /// - Retrying is idempotent: ideas already saved are skipped as duplicates, so a file whose archive step failed
+    ///   adds nothing on retry and is simply archived then.
+    public static func importInbox(store: Store, into state: inout AppState, now: Date = Date(),
+                                   persist: (AppState) throws -> Void) -> ImportResult {
         let fm = FileManager.default
-        let files = try fm.contentsOfDirectory(at: store.inboxURL, includingPropertiesForKeys: nil)
-            .filter { ["txt", "md"].contains($0.pathExtension.lowercased()) }
-            .sorted { $0.lastPathComponent < $1.lastPathComponent }
-        var seen = Set(state.ideas.map { $0.text.lowercased() })
-        var added = 0
+        var result = ImportResult()
+        let files: [URL]
+        do {
+            files = try fm.contentsOfDirectory(at: store.inboxURL, includingPropertiesForKeys: nil)
+                .filter { ["txt", "md"].contains($0.pathExtension.lowercased()) }
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        } catch {
+            result.errors.append("Couldn't list inbox: \(error.localizedDescription)")
+            return result
+        }
         let importedDir = store.inboxURL.appendingPathComponent("imported", isDirectory: true)
         for file in files {
-            let text = try String(contentsOf: file, encoding: .utf8)
+            let name = file.lastPathComponent
+            let text: String
+            do { text = try String(contentsOf: file, encoding: .utf8) } catch {
+                result.errors.append("\(name): couldn't read (\(error.localizedDescription)); left in inbox")
+                continue
+            }
+            var next = state
+            var seen = Set(next.ideas.map { $0.text.lowercased() })
+            var added = 0
             for line in parse(text) where !seen.contains(line.lowercased()) {
                 seen.insert(line.lowercased())
-                state.ideas.append(Idea(text: line, source: file.lastPathComponent, added: now))
+                next.ideas.append(Idea(text: line, source: name, added: now))
                 added += 1
             }
-            var dest = importedDir.appendingPathComponent(file.lastPathComponent)
-            if fm.fileExists(atPath: dest.path) {
-                dest = importedDir.appendingPathComponent("\(Int(now.timeIntervalSince1970))-\(file.lastPathComponent)")
+            if added > 0 {
+                do { try persist(next) } catch {
+                    result.errors.append("\(name): couldn't save ideas (\(error.localizedDescription)); left in inbox")
+                    break
+                }
+                state = next
+                result.added += added
             }
-            try fm.moveItem(at: file, to: dest)
+            var dest = importedDir.appendingPathComponent(name)
+            if fm.fileExists(atPath: dest.path) {
+                dest = importedDir.appendingPathComponent("\(Int(now.timeIntervalSince1970))-\(name)")
+            }
+            do {
+                try fm.moveItem(at: file, to: dest)
+                result.archived.append(name)
+            } catch {
+                result.errors.append("\(name): ideas saved but couldn't archive (\(error.localizedDescription)); a retry will skip duplicates")
+            }
         }
-        return added
+        return result
     }
 }

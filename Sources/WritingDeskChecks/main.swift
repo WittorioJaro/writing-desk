@@ -123,14 +123,91 @@ struct PersistenceAndIdeasTests {
         s.ideas.append(Idea(text: "Existing idea", source: "manual"))
         try "- existing IDEA\n- New one\n- Another".write(to: store.inboxURL.appendingPathComponent("2026-11-21.md"), atomically: true, encoding: .utf8)
         try "ignored".write(to: store.inboxURL.appendingPathComponent("notes.json"), atomically: true, encoding: .utf8)
-        expect(try IdeasInbox.importInbox(store: store, into: &s) == 2)
+        expect(IdeasInbox.importInbox(store: store, into: &s, persist: store.save).added == 2)
         expect(s.ideas.map(\.text) == ["Existing idea", "New one", "Another"])
         expect(s.ideas.last?.source == "2026-11-21.md")
         expect(s.articles.map(\.body) == ["body"])
         expect(FileManager.default.fileExists(atPath: store.inboxURL.appendingPathComponent("imported/2026-11-21.md").path))
-        expect(try IdeasInbox.importInbox(store: store, into: &s) == 0) // file was moved; no reimport
+        expect(IdeasInbox.importInbox(store: store, into: &s, persist: store.save).added == 0) // file was moved; no reimport
         try "- New one\n- Third".write(to: store.inboxURL.appendingPathComponent("2026-11-21.md"), atomically: true, encoding: .utf8)
-        expect(try IdeasInbox.importInbox(store: store, into: &s) == 1)
+        expect(IdeasInbox.importInbox(store: store, into: &s, persist: store.save).added == 1)
+    }
+
+    func loadFailureIsReadOnlyAndPreservesFile() throws {
+        let store = try tempStore()
+        let corrupt = Data("{ \"articles\": [ {\"title\": \"Victor's draft\"".utf8)  // truncated JSON
+        try corrupt.write(to: store.stateURL)
+        let inboxFile = store.inboxURL.appendingPathComponent("elon.md")
+        try "- An idea".write(to: inboxFile, atomically: true, encoding: .utf8)
+
+        let ws = Workspace(store: store)
+        expect(!ws.isWritable && ws.loadError != nil)
+        var threw = false
+        do { try ws.mutate { $0.articles.append(Article(title: "new")) } } catch WorkspaceError.readOnly { threw = true }
+        expect(threw, "edit must be refused")
+        threw = false
+        do { _ = try ws.importInbox() } catch WorkspaceError.readOnly { threw = true }
+        expect(threw, "inbox import must be refused")
+        expect(ws.state.articles.isEmpty && ws.state.ideas.isEmpty, "refused writes must not change memory")
+        expect(try Data(contentsOf: store.stateURL) == corrupt, "state.json must be byte-identical")
+        expect(FileManager.default.fileExists(atPath: inboxFile.path), "inbox file must stay in inbox")
+
+        // Recovery: once the file is valid again, a relaunch is writable and keeps the recovered data.
+        var good = AppState(); good.articles.append(Article(title: "Victor's draft", body: "kept"))
+        try store.save(good)
+        let ws2 = Workspace(store: store)
+        expect(ws2.isWritable && ws2.state.articles.first?.body == "kept")
+        try ws2.mutate { $0.articles[0].body = "kept and edited" }
+        expect(try store.load().articles.first?.body == "kept and edited")
+        // A missing file is a fresh, writable workspace (first launch).
+        expect(Workspace(store: try tempStore()).isWritable)
+    }
+
+    func importPersistsBeforeArchivingAndSurvivesFailures() throws {
+        let store = try tempStore()
+        let fm = FileManager.default
+        let inbox = store.inboxURL, imported = inbox.appendingPathComponent("imported")
+        try "- First idea".write(to: inbox.appendingPathComponent("1.md"), atomically: true, encoding: .utf8)
+        try "- Second idea".write(to: inbox.appendingPathComponent("2.md"), atomically: true, encoding: .utf8)
+        try Data([0xFF, 0xFE, 0x00, 0xC3]).write(to: inbox.appendingPathComponent("0-bad.txt")) // invalid UTF-8
+        var s = AppState()
+        try store.save(s)
+
+        // Save fails for the second file: first file's import stays saved + archived; second stays in inbox.
+        struct DiskFull: Error {}
+        var calls = 0
+        var r = IdeasInbox.importInbox(store: store, into: &s, persist: { st in
+            calls += 1
+            if calls == 2 { throw DiskFull() }
+            try store.save(st)
+        })
+        expect(r.added == 1 && r.archived == ["1.md"], "\(r)")
+        expect(r.errors.count == 2, "read error + save error: \(r.errors)")
+        expect(s.ideas.map(\.text) == ["First idea"], "failed file rolled back in memory")
+        expect(try store.load().ideas.map(\.text) == ["First idea"], "prior import saved on disk")
+        expect(fm.fileExists(atPath: inbox.appendingPathComponent("2.md").path), "unsaved file retained")
+        expect(fm.fileExists(atPath: inbox.appendingPathComponent("0-bad.txt").path), "unreadable file retained")
+        expect(fm.fileExists(atPath: imported.appendingPathComponent("1.md").path))
+
+        // Archive step fails after a successful save: ideas are on disk, original stays, retry is idempotent.
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: imported.path)
+        r = IdeasInbox.importInbox(store: store, into: &s, persist: store.save)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: imported.path)
+        expect(r.added == 1 && r.archived.isEmpty, "\(r)")
+        expect(try store.load().ideas.map(\.text) == ["First idea", "Second idea"])
+        expect(fm.fileExists(atPath: inbox.appendingPathComponent("2.md").path))
+
+        r = IdeasInbox.importInbox(store: store, into: &s, persist: store.save)
+        expect(r.added == 0 && r.archived == ["2.md"], "retry adds nothing, just archives: \(r)")
+        expect(try store.load().ideas.map(\.text) == ["First idea", "Second idea"], "no duplicates")
+        expect(fm.fileExists(atPath: inbox.appendingPathComponent("0-bad.txt").path), "bad file still retained")
+
+        // Workspace path: real store save, ideas on disk before archive.
+        try "- Third".write(to: inbox.appendingPathComponent("3.md"), atomically: true, encoding: .utf8)
+        let ws = Workspace(store: store)
+        let wr = try ws.importInbox()
+        expect(wr.added == 1 && wr.archived == ["3.md"])
+        expect(try store.load().ideas.count == 3)
     }
 
     func wordCount() {
@@ -165,6 +242,8 @@ let checks: [(String, () throws -> Void)] = [
     ("ideas: inbox format parsing", p.parsesInboxFormat),
     ("ideas: import once, dedupe, articles untouched", p.importsInboxOnceDedupesAndKeepsArticlesUntouched),
     ("words: counting", p.wordCount),
+    ("safety: unreadable state.json -> read-only, file preserved, no import", p.loadFailureIsReadOnlyAndPreservesFile),
+    ("safety: inbox saves before archiving; read/save/archive failures recover", p.importPersistsBeforeArchivingAndSurvivesFailures),
 ]
 for (name, fn) in checks { run(name, fn) }
 // Optional: write sample covers for visual review: COVER_SAMPLES_DIR=/some/dir make test

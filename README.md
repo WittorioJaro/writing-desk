@@ -10,7 +10,7 @@ A small, local-only macOS writing editor for Victor (native SwiftUI, built with 
 ## Build & run
 
 ```sh
-make test   # build + run the 11 core checks (covers 5:2 + content dependence, persistence, accountability, ideas)
+make test   # build + run the 13 core checks (covers 5:2 + content dependence, persistence, accountability, ideas, load/import failure safety)
 make run    # build build/WritingDesk.app and open it
 make app    # just build the .app
 ```
@@ -30,13 +30,17 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 
 ### Inbox format
 
-One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, when you click the tray button in the ideas panel, or with ⇧⌘I. Each processed file is moved to `inbox/imported/`, so it's never imported twice.
+One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, when you click the tray button in the ideas panel, or with ⇧⌘I. Files are handled one at a time: the new ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in the status line. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
 
 ```md
 # Ideas — 2026-11-21
 - Why do streaks fail after week two?
 - Think about what "minimal" means for a cover
 ```
+
+## If saved data can't be loaded
+
+If `state.json` exists but can't be read (for example, it's corrupted or was edited by hand), Writing Desk opens **read-only**: a red banner shows the error, editing is disabled, and nothing is written. The startup inbox import is skipped too. The file is left exactly as it was. To recover, fix `state.json` or move it aside (use **Show in Finder** on the banner), then relaunch. If there's no `state.json` at all, that's treated as a normal first launch.
 
 ## Notes
 

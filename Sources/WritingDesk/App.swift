@@ -4,70 +4,85 @@ import WritingDeskCore
 
 @MainActor
 final class DeskModel: ObservableObject {
-    @Published var state: AppState
+    @Published private(set) var state: AppState
     @Published var selection: UUID?
     @Published var status = ""
     @Published var showCovers = false
     @Published var showIdeas = true
     @Published var ideaDraft = ""
-    let store: Store
+    let workspace: Workspace
+    var store: Store { workspace.store }
+    /// Non-nil when state.json couldn't be loaded: the app is read-only until relaunched after recovery.
+    var loadError: String? { workspace.loadError }
+    var isWritable: Bool { workspace.isWritable }
 
     init() {
-        let store = try! Store()
-        self.store = store
-        var s = (try? store.load()) ?? AppState()
-        if s.articles.isEmpty { s.articles.append(Article(title: "First article")) }
-        state = s
-        selection = s.articles.first?.id
-        checkInbox()
+        let store: Store
+        do { store = try Store() } catch { fatalError("Can't create data folder at \(Store.defaultRoot.path): \(error)") }
+        workspace = Workspace(store: store)
+        state = workspace.state
+        if workspace.isWritable {
+            if state.articles.isEmpty { mutate { $0.articles.append(Article(title: "First article")) } }
+            checkInbox()
+        } else {
+            status = "Read-only: state.json couldn't be loaded"
+        }
+        selection = state.articles.first?.id
     }
 
-    func save() {
-        do { try store.save(state) } catch { status = "Save failed: \(error.localizedDescription)" }
+    /// Every write goes through here. A read-only workspace refuses it and nothing is written.
+    private func mutate(_ change: (inout AppState) -> Void) {
+        do { try workspace.mutate(change) } catch { status = "Not saved: \(error.localizedDescription)" }
+        state = workspace.state
     }
 
     var currentIndex: Int? { state.articles.firstIndex { $0.id == selection } }
 
     func updateBody(_ new: String) {
         guard let i = currentIndex, state.articles[i].body != new else { return }
-        let old = state.articles[i].wordCount
-        state.articles[i].body = new
-        state.articles[i].updated = Date()
-        state.accountability.recordEdit(oldWordCount: old, newWordCount: state.articles[i].wordCount)
-        save()
+        mutate { s in
+            let old = s.articles[i].wordCount
+            s.articles[i].body = new
+            s.articles[i].updated = Date()
+            s.accountability.recordEdit(oldWordCount: old, newWordCount: s.articles[i].wordCount)
+        }
     }
 
     func updateTitle(_ new: String) {
         guard let i = currentIndex else { return }
-        state.articles[i].title = new
-        save()
+        mutate { $0.articles[i].title = new }
     }
+
+    func setGoal(_ goal: Int) { mutate { $0.accountability.dailyGoal = max(50, goal) } }
 
     func newArticle() {
         let a = Article()
-        state.articles.insert(a, at: 0)
-        selection = a.id
-        save()
+        mutate { $0.articles.insert(a, at: 0) }
+        if state.articles.contains(where: { $0.id == a.id }) { selection = a.id }
     }
 
     func delete(_ id: UUID) {
-        state.articles.removeAll { $0.id == id }
+        mutate { $0.articles.removeAll { $0.id == id } }
         if selection == id { selection = state.articles.first?.id }
-        save()
     }
+
+    func addIdea(_ text: String) { mutate { $0.ideas.append(Idea(text: text, source: "added in app")) } }
 
     func checkInbox() {
         do {
-            let n = try IdeasInbox.importInbox(store: store, into: &state)
-            status = n > 0 ? "Imported \(n) new idea\(n == 1 ? "" : "s") from Elon" : "Inbox checked — nothing new"
-            if n > 0 { save() }
-        } catch { status = "Inbox error: \(error.localizedDescription)" }
+            let r = try workspace.importInbox()
+            state = workspace.state
+            if !r.errors.isEmpty {
+                status = "Inbox: \(r.added) imported; " + r.errors.joined(separator: " · ")
+            } else {
+                status = r.added > 0 ? "Imported \(r.added) new idea\(r.added == 1 ? "" : "s") from Elon" : "Inbox checked — nothing new"
+            }
+        } catch { status = error.localizedDescription }
     }
 
     func toggleIdea(_ id: UUID) {
         guard let i = state.ideas.firstIndex(where: { $0.id == id }) else { return }
-        state.ideas[i].done.toggle()
-        save()
+        mutate { $0.ideas[i].done.toggle() }
     }
 }
 
@@ -83,8 +98,8 @@ struct WritingDeskApp: App {
         }
         .commands {
             CommandGroup(after: .newItem) {
-                Button("New Article") { model.newArticle() }.keyboardShortcut("n")
-                Button("Check Ideas Inbox") { model.checkInbox() }.keyboardShortcut("i", modifiers: [.command, .shift])
+                Button("New Article") { model.newArticle() }.keyboardShortcut("n").disabled(!model.isWritable)
+                Button("Check Ideas Inbox") { model.checkInbox() }.keyboardShortcut("i", modifiers: [.command, .shift]).disabled(!model.isWritable)
             }
         }
     }
@@ -108,9 +123,11 @@ struct ContentView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { GoalPanel().padding(10) }
-            .toolbar { Button { model.newArticle() } label: { Image(systemName: "square.and.pencil") }.help("New article") }
+            .toolbar { Button { model.newArticle() } label: { Image(systemName: "square.and.pencil") }.help("New article").disabled(!model.isWritable) }
             .navigationSplitViewColumnWidth(min: 200, ideal: 230)
         } detail: {
+            VStack(spacing: 0) {
+            if let err = model.loadError { LoadErrorBanner(message: err, folder: model.store.root) }
             HStack(spacing: 0) {
                 if let i = model.currentIndex {
                     EditorView(article: model.state.articles[i]).id(model.state.articles[i].id)
@@ -118,6 +135,7 @@ struct ContentView: View {
                     Text("No article selected").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if model.showIdeas { Divider(); IdeasPanel().frame(width: 260) }
+            }
             }
             .toolbar {
                 ToolbarItemGroup {
@@ -153,6 +171,7 @@ struct EditorView: View {
             }.padding(.horizontal, 40).padding(.vertical, 8)
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .disabled(!model.isWritable)
     }
 }
 
@@ -181,7 +200,7 @@ struct GoalPanel: View {
                 Text("Streak: \(acc.streak()) day\(acc.streak() == 1 ? "" : "s")").font(.caption)
                 Spacer()
                 Stepper("Goal", value: Binding(get: { model.state.accountability.dailyGoal },
-                                               set: { model.state.accountability.dailyGoal = max(50, $0); model.save() }),
+                                               set: { model.setGoal($0) }),
                         step: 50).font(.caption).labelsHidden()
             }
         }
@@ -196,7 +215,7 @@ struct IdeasPanel: View {
             HStack {
                 Text("From Elon").font(.headline)
                 Spacer()
-                Button { model.checkInbox() } label: { Image(systemName: "tray.and.arrow.down") }.buttonStyle(.borderless).help("Check inbox folder")
+                Button { model.checkInbox() } label: { Image(systemName: "tray.and.arrow.down") }.buttonStyle(.borderless).help("Check inbox folder").disabled(!model.isWritable)
                 Button { NSWorkspace.shared.open(model.store.inboxURL) } label: { Image(systemName: "folder") }.buttonStyle(.borderless).help("Open inbox folder")
             }
             Text("Prompts & things to think about. Never mixed into your article.").font(.caption).foregroundStyle(.secondary)
@@ -211,10 +230,10 @@ struct IdeasPanel: View {
                     }
                 }
             }.listStyle(.plain)
-            TextField("Add idea manually…", text: $model.ideaDraft).onSubmit {
+            TextField("Add idea manually…", text: $model.ideaDraft).disabled(!model.isWritable).onSubmit {
                 let t = model.ideaDraft.trimmingCharacters(in: .whitespaces)
                 guard !t.isEmpty else { return }
-                model.state.ideas.append(Idea(text: t, source: "added in app")); model.save(); model.ideaDraft = ""
+                model.addIdea(t); model.ideaDraft = ""
             }
         }.padding(12)
     }
@@ -263,5 +282,23 @@ struct CoversSheet: View {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do { try CoverGenerator.exportPNG(img, to: url); model.status = "Saved \(url.lastPathComponent)" }
         catch { model.status = "Export failed: \(error.localizedDescription)" }
+    }
+}
+
+struct LoadErrorBanner: View {
+    let message: String
+    let folder: URL
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.white)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your saved data couldn't be loaded, so editing is disabled.").bold()
+                Text(message).font(.caption).textSelection(.enabled)
+                Text("Nothing was overwritten. Fix or move state.json aside, then relaunch Writing Desk.").font(.caption)
+            }.foregroundStyle(.white)
+            Spacer()
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder.appendingPathComponent("state.json")]) }
+        }
+        .padding(12).background(Color.red.opacity(0.85))
     }
 }
