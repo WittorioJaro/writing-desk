@@ -210,6 +210,27 @@ struct PersistenceAndIdeasTests {
         expect(try store.load().ideas.count == 3)
     }
 
+    func duplicateOnlyFileIsNotArchivedUntilSaved() throws {
+        let store = try tempStore()
+        let fm = FileManager.default
+        let file = store.inboxURL.appendingPathComponent("dup.md")
+        var s = AppState()
+        try store.save(s)
+        // An idea exists only in memory: it was added, but its save failed.
+        s.ideas.append(Idea(text: "Unsaved idea", source: "added in app"))
+        try "- unsaved IDEA".write(to: file, atomically: true, encoding: .utf8)
+        struct DiskFull: Error {}
+
+        var r = IdeasInbox.importInbox(store: store, into: &s, persist: { _ in throw DiskFull() })
+        expect(r.added == 0 && r.archived.isEmpty && r.errors.count == 1, "\(r)")
+        expect(fm.fileExists(atPath: file.path), "duplicate-only file must stay while the save fails")
+        expect(try store.load().ideas.isEmpty)
+
+        r = IdeasInbox.importInbox(store: store, into: &s, persist: store.save)
+        expect(r.added == 0 && r.archived == ["dup.md"], "\(r)")
+        expect(try store.load().ideas.map(\.text) == ["Unsaved idea"], "idea is durable before its source is archived")
+    }
+
     func wordCount() {
         expect(WordCounter.count("") == 0)
         expect(WordCounter.count("One two,  three.\nFour") == 4)
@@ -244,6 +265,7 @@ let checks: [(String, () throws -> Void)] = [
     ("words: counting", p.wordCount),
     ("safety: unreadable state.json -> read-only, file preserved, no import", p.loadFailureIsReadOnlyAndPreservesFile),
     ("safety: inbox saves before archiving; read/save/archive failures recover", p.importPersistsBeforeArchivingAndSurvivesFailures),
+    ("safety: duplicate-only inbox file not archived until a save succeeds", p.duplicateOnlyFileIsNotArchivedUntilSaved),
 ]
 for (name, fn) in checks { run(name, fn) }
 // Optional: write sample covers for visual review: COVER_SAMPLES_DIR=/some/dir make test

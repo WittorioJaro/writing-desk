@@ -32,6 +32,7 @@ public enum IdeasInbox {
     /// - If a save fails, that file's ideas are rolled back and the import stops; files saved earlier stay saved and archived.
     /// - Retrying is idempotent: ideas already saved are skipped as duplicates, so a file whose archive step failed
     ///   adds nothing on retry and is simply archived then.
+    /// - The save happens even when a file adds nothing new, so archiving always follows a successful save.
     public static func importInbox(store: Store, into state: inout AppState, now: Date = Date(),
                                    persist: (AppState) throws -> Void) -> ImportResult {
         let fm = FileManager.default
@@ -61,14 +62,15 @@ public enum IdeasInbox {
                 next.ideas.append(Idea(text: line, source: name, added: now))
                 added += 1
             }
-            if added > 0 {
-                do { try persist(next) } catch {
-                    result.errors.append("\(name): couldn't save ideas (\(error.localizedDescription)); left in inbox")
-                    break
-                }
-                state = next
-                result.added += added
+            // Always save before archiving, even when every line was a duplicate: the duplicate may
+            // match an idea that is only in memory (an earlier save failed), and archiving would
+            // then remove the only durable copy.
+            do { try persist(next) } catch {
+                result.errors.append("\(name): couldn't save ideas (\(error.localizedDescription)); left in inbox")
+                break
             }
+            state = next
+            result.added += added
             var dest = importedDir.appendingPathComponent(name)
             if fm.fileExists(atPath: dest.path) {
                 dest = importedDir.appendingPathComponent("\(Int(now.timeIntervalSince1970))-\(name)")

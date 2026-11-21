@@ -10,7 +10,7 @@ A small, local-only macOS writing editor for Victor (native SwiftUI, built with 
 ## Build & run
 
 ```sh
-make test   # build + run the 13 core checks (covers 5:2 + content dependence, persistence, accountability, ideas, load/import failure safety)
+make test   # build + run the 14 core checks (covers 5:2 + content dependence, persistence, accountability, ideas, load/import failure safety)
 make run    # build build/WritingDesk.app and open it
 make app    # just build the .app
 ```
@@ -30,7 +30,7 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 
 ### Inbox format
 
-One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, when you click the tray button in the ideas panel, or with ⇧⌘I. Files are handled one at a time: the new ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in the status line. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
+One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, when you click the tray button in the ideas panel, or with ⇧⌘I. Files are handled one at a time: the ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. This save happens even when a file contains only duplicates, so a file is never archived while the ideas it repeats exist only in memory. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in the status line. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
 
 ```md
 # Ideas — 2026-11-21
