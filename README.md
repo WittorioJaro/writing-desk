@@ -7,6 +7,21 @@ A small, local-only macOS writing editor for Victor (native SwiftUI, built with 
 - **Ideas from Elon**: a separate side panel (never mixed into articles) holding prompts and things to think about, with a checkbox to mark each one done. Ideas come from a local inbox folder (below) or can be typed in by hand.
 - **Covers**: the toolbar **Covers** button generates 5 distinct, text-free, minimalist cover options (Orbit, Grid, Waves, Monolith, Rhythm) at exactly **5:2 (1500×600)**. They're built offline from the article's keywords and sentence rhythm, so different articles get different covers and the same article always gets the same ones. **Export PNG…** saves a cover (defaults to the `covers/` folder).
 
+## Install on a Mac
+
+**Prebuilt (Apple silicon):** download `WritingDesk.zip` from the repo's latest GitHub Release, unzip it, and drag `WritingDesk.app` into `/Applications`. The app isn't notarized, so the first time you open it, right-click it and choose **Open**.
+
+**From source (any Mac with the Command Line Tools: `xcode-select --install`):**
+
+```sh
+git clone https://github.com/WittorioJaro/writing-desk.git
+cd writing-desk
+./scripts/build-app.sh && ditto build/WritingDesk.app /Applications/WritingDesk.app
+open /Applications/WritingDesk.app
+```
+
+Your writing stays on each Mac (`~/Library/Application Support/WritingDesk/`) and isn't synced or uploaded.
+
 ## Build & run
 
 ```sh
