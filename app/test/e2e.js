@@ -186,6 +186,29 @@ whenReady.then(async ({ win, ws }) => {
     assert.equal(await js(`document.querySelector('#page-cover').classList.contains('on')`), false, 'other piece has no cover');
   });
 
+  await check('copying paragraphs drops the blank lines between them (for X), cut deletes', async () => {
+    const { clipboard } = require('electron');
+    const savedText = await clipboard.readText().catch(() => '');
+    const html = async () => { const [item] = await clipboard.read(); return item.types.includes('text/html') ? (await item.getType('text/html')).text() : ''; };
+    try {
+      await js(`(() => { const t = document.querySelector('#body'); t.focus(); t.setSelectionRange(0, 0); document.execCommand('insertText', false, 'Para one.\\n\\nPara two.\\n\\n'); })()`);
+      await wait(300);
+      await js(`document.querySelector('#body').setSelectionRange(0, 'Para one.\\n\\nPara two.'.length)`);
+      win.webContents.copy();
+      await wait(300);
+      assert.equal(await clipboard.readText(), 'Para one.\nPara two.');
+      assert.match(await html(), /<p>Para one\.<\/p><p>Para two\.<\/p>/);
+      await js(`document.querySelector('#body').setSelectionRange(0, 'Para one.\\n\\nPara two.\\n\\n'.length)`);
+      win.webContents.cut();
+      await wait(500);
+      assert.equal(await clipboard.readText(), 'Para one.\nPara two.');
+      assert.match(await js(`document.querySelector('#body').value`), /^Another page entirely\.$/);
+      assert.equal(ws.state.articles.find((a) => a.title === 'Second').body, 'Another page entirely.', 'cut is saved');
+    } finally {
+      await clipboard.writeText(savedText).catch(() => {}); // put back the text that was on the clipboard
+    }
+  });
+
   const failed = results.filter((r) => r[0] === 'fail').length;
   console.log(`\n${results.length - failed}/${results.length} end-to-end checks passed`);
   ws.flush();

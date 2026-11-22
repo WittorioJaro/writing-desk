@@ -1,6 +1,7 @@
 import { Field, Flame, odometer, tween } from './fx.js';
 import { seedFrom, renderCover, STYLES, EXPORT_W } from './covers.js';
 import * as A from './acc.js';
+import { clipboardForms } from './clipboard.js';
 
 const $ = (s) => document.querySelector(s);
 const desk = window.desk;
@@ -128,6 +129,19 @@ el.text.addEventListener('input', async () => {
   const id = await ensureArticle();
   if (id) op('setBody', id, el.text.value);
 });
+
+// Copy/cut across paragraphs: drop the blank lines between them, so a paste into X's editor doesn't
+// gain an empty paragraph after each one (see clipboard.js).
+for (const kind of ['copy', 'cut']) {
+  el.text.addEventListener(kind, (e) => {
+    const f = clipboardForms(el.text.value.slice(el.text.selectionStart, el.text.selectionEnd));
+    if (!f) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', f.plain);
+    e.clipboardData.setData('text/html', f.html);
+    if (kind === 'cut' && !el.text.readOnly) document.execCommand('delete'); // keeps undo, fires input
+  });
+}
 
 // Writing mode: everything but the words fades away once you type, and returns when you move the mouse.
 let mouseAnchor = null;
