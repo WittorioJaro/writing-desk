@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' file:; img-src 'self' data: blob:; connect-src 'none'">
+  <title>Writing Desk</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="booting">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="ember-grad" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#FFC56B"/><stop offset=".55" stop-color="#FF7A3D"/><stop offset="1" stop-color="#F2385A"/>
+      </linearGradient>
+    </defs>
+  </svg>
+
+  <div id="dragbar"></div>
+  <div id="goal-line" aria-hidden="true"><div class="fill"><div class="shine"></div></div></div>
+
+  <div id="readonly" hidden>
+    <strong>Your saved writing couldn’t be loaded, so editing is off.</strong>
+    <span id="readonly-msg"></span>
+    <button class="link" data-reveal="state">Show in Finder</button>
+  </div>
+
+  <header class="chrome top">
+    <div class="cluster left">
+      <button class="icon" id="btn-articles" title="Your writing (⌘O)" aria-label="Your writing">
+        <svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="M9 4.5v15"/></svg>
+      </button>
+      <button class="icon" id="btn-new" title="New piece (⌘N)" aria-label="New piece">
+        <svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg>
+      </button>
+    </div>
+    <div class="cluster right">
+      <button class="icon" id="btn-covers" title="Covers (⌘K)" aria-label="Covers">
+        <svg viewBox="0 0 24 24"><rect x="2.5" y="7" width="19" height="10" rx="2"/><circle cx="8" cy="12" r="2"/><path d="M12.5 15.5l3-3 3.5 3.5"/></svg>
+      </button>
+      <button class="icon" id="btn-prompts" title="From Elon (⌘I)" aria-label="From Elon">
+        <svg viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z"/><path d="M18.5 16.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+        <span class="badge" id="prompts-badge" hidden></span>
+      </button>
+      <button class="icon" id="btn-sync" title="Sync" aria-label="Sync">
+        <span class="sync-dot" id="sync-dot"></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="scroller">
+    <article id="page">
+      <textarea id="title" rows="1" placeholder="Untitled" spellcheck="true" aria-label="Title"></textarea>
+      <textarea id="body" placeholder="Begin anywhere." spellcheck="true" aria-label="Your writing"></textarea>
+    </article>
+  </main>
+
+  <footer class="chrome bottom">
+    <div class="meta" id="piece-meta"><span id="piece-words">0 words</span><span class="dot">·</span><span id="piece-read">under a minute</span></div>
+    <button id="momentum-chip" title="Momentum (⌘J)" aria-label="Momentum">
+      <svg class="ring" viewBox="0 0 36 36">
+        <circle class="track" cx="18" cy="18" r="15"/>
+        <circle class="prog" cx="18" cy="18" r="15" pathLength="100"/>
+      </svg>
+      <span class="today"><b id="chip-today">0</b><span class="of">/ <span id="chip-goal">500</span></span></span>
+      <span class="divider"></span>
+      <span class="ember" id="chip-ember"><i></i></span>
+      <b id="chip-streak">0</b>
+    </button>
+  </footer>
+
+  <div id="scrim"></div>
+
+  <aside class="drawer left" id="drawer-articles" aria-label="Your writing">
+    <div class="drawer-head">
+      <h2>Your writing</h2>
+      <button class="icon small" id="btn-new-2" title="New piece (⌘N)"><svg viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></svg></button>
+    </div>
+    <input id="filter" class="field" placeholder="Search" spellcheck="false">
+    <ul id="article-list" class="list"></ul>
+  </aside>
+
+  <aside class="drawer right" id="drawer-prompts" aria-label="From Elon">
+    <div class="drawer-head">
+      <div>
+        <h2>From Elon</h2>
+        <p class="caption">Prompts and things to think about. They never touch your text.</p>
+      </div>
+    </div>
+    <ul id="idea-list" class="list ideas"></ul>
+    <details id="done-wrap"><summary>Done <span id="done-count"></span></summary><ul id="idea-done" class="list ideas"></ul></details>
+    <div class="drawer-foot">
+      <input id="idea-input" class="field" placeholder="Add a prompt…">
+      <div class="row">
+        <button class="ghost" id="btn-inbox">Check inbox</button>
+        <button class="ghost" data-reveal="inbox">Open inbox folder</button>
+      </div>
+    </div>
+  </aside>
+
+  <section class="overlay" id="overlay-momentum" aria-label="Momentum">
+    <div class="sheet momentum">
+      <button class="close icon" data-close><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+      <div class="hero">
+        <div class="flame" id="hero-flame"><canvas id="flame-canvas" width="360" height="360"></canvas></div>
+        <div class="hero-num"><div class="odometer" id="hero-streak"></div><div class="hero-label" id="hero-label">day streak</div></div>
+      </div>
+      <p class="nudge" id="nudge"></p>
+      <div class="stats">
+        <div class="stat"><svg class="ring big" viewBox="0 0 120 120"><circle class="track" cx="60" cy="60" r="52"/><circle class="prog" id="big-ring" cx="60" cy="60" r="52" pathLength="100"/></svg>
+          <div class="stat-in"><b id="big-today">0</b><span>of <span id="big-goal">500</span> today</span></div></div>
+        <div class="stat-col">
+          <div class="kv"><span>Daily goal</span>
+            <div class="stepper"><button id="goal-minus" aria-label="Lower goal">−</button><b id="goal-val">500</b><button id="goal-plus" aria-label="Raise goal">+</button></div></div>
+          <div class="kv"><span>Best streak</span><b id="best-streak">0</b></div>
+          <div class="kv"><span>Last 7 days</span><b id="week-words">0</b></div>
+          <div class="kv"><span>All time</span><b id="all-words">0</b></div>
+        </div>
+      </div>
+      <div class="heat-wrap"><div class="heat" id="heat"></div><div class="heat-tip" id="heat-tip"></div></div>
+    </div>
+  </section>
+
+  <section class="overlay" id="overlay-covers" aria-label="Covers">
+    <div class="sheet covers">
+      <button class="close icon" data-close><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+      <div class="sheet-head">
+        <h2>Covers</h2>
+        <p class="caption" id="covers-caption">Drawn from the words in your piece. 5:2, no text.</p>
+        <button class="ghost" id="btn-shuffle"><svg viewBox="0 0 24 24"><path d="M4 7h4l8 10h4M4 17h4l2.5-3M14 10l2-3h4M17.5 4.5L20 7l-2.5 2.5M17.5 14.5L20 17l-2.5 2.5"/></svg>Shuffle</button>
+      </div>
+      <div class="cover-grid" id="cover-grid"></div>
+    </div>
+  </section>
+
+  <section class="overlay" id="overlay-sync" aria-label="Sync">
+    <div class="sheet small">
+      <button class="close icon" data-close><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+      <h2>Sync</h2>
+      <p class="caption">Keeps this Mac in step with your Writing Desk server over Tailscale. Your writing goes nowhere else.</p>
+      <input id="sync-url" class="field" placeholder="http://my-mac:8765" spellcheck="false">
+      <div class="sync-status"><span class="sync-dot" id="sync-dot-2"></span><span id="sync-msg">Sync is off</span></div>
+      <div class="row end">
+        <button class="ghost" id="sync-off" hidden>Turn off</button>
+        <button class="ghost" id="sync-now" hidden>Sync now</button>
+        <button class="primary" id="sync-on">Turn on</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="lightbox"><canvas id="lightbox-canvas"></canvas><div class="lb-bar"><span id="lb-name"></span><button class="primary" id="lb-export">Export PNG</button></div></div>
+
+  <canvas id="fx"></canvas>
+  <div id="celebrate" aria-live="polite">
+    <div class="c-ring"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="88" pathLength="100"/></svg></div>
+    <div class="c-num"><div class="odometer" id="c-streak"></div></div>
+    <div class="c-label" id="c-label">day streak</div>
+    <div class="c-sub" id="c-sub">Goal met</div>
+  </div>
+  <div id="toast"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

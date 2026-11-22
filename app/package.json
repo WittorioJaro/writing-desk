@@ -1,0 +1,18 @@
+{
+  "name": "writing-desk",
+  "productName": "Writing Desk",
+  "version": "2.0.0",
+  "description": "A quiet, local writing desk with a daily goal, streaks, Elon's prompts and offline 5:2 covers.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "test:e2e": "electron test/e2e.js",
+    "build": "node scripts/build.js"
+  },
+  "devDependencies": {
+    "@electron/packager": "20.3.0",
+    "electron": "45.2.3"
+  }
+}

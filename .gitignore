@@ -2,3 +2,6 @@
 build/
 *.png
 .DS_Store
+!app/assets/*.png
+app/node_modules/
+app/dist/

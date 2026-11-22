@@ -8,7 +8,6 @@ let package = Package(
         .target(name: "WritingDeskCore"),
         .target(name: "WritingDeskServerKit", dependencies: ["WritingDeskCore"],
                 linkerSettings: [.linkedLibrary("sqlite3")]),
-        .executableTarget(name: "WritingDesk", dependencies: ["WritingDeskCore"]),
         .executableTarget(name: "WritingDeskServer", dependencies: ["WritingDeskServerKit"]),
         .executableTarget(name: "WritingDeskChecks", dependencies: ["WritingDeskCore", "WritingDeskServerKit"]),
     ]

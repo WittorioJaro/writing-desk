@@ -1,24 +1,22 @@
 # Writing Desk
 
-A small macOS writing editor for Victor (native SwiftUI, built with Command Line Tools only, no Xcode). Everything stays on your own Macs. The optional sync goes only to your own server over Tailscale.
+A quiet macOS writing desk for Victor: a large empty page, a daily goal, a streak that keeps you going, prompts from Elon, and offline 5:2 cover art. Built with Electron. Everything stays on your own Macs; the optional sync goes only to your own server over Tailscale.
 
-- **Editor**: minimal title + body, autosaved on every keystroke. Victor writes all article text; the app never generates or suggests article text.
-- **Accountability**: a daily word goal (default 500, adjust in steps of 50), today's progress bar, a 14-day history chart, and a streak counter. Only *new* words count, so deleting text never lowers a day's total.
-- **Ideas from Elon**: a separate side panel (never mixed into articles) holding prompts and things to think about, with a checkbox to mark each one done. Ideas come from a local inbox folder (below) or can be typed in by hand.
-- **Covers**: the toolbar **Covers** button generates 5 distinct, text-free, minimalist cover options (Orbit, Grid, Waves, Monolith, Rhythm) at exactly **5:2 (1500×600)**. They're built offline from the article's keywords and sentence rhythm, so different articles get different covers and the same article always gets the same ones. **Export PNG…** saves a cover (defaults to the `covers/` folder).
+- **The page**: title and body in a big serif on an empty canvas. Start typing and everything else fades away; move the mouse to bring it back. Autosaved as you type. Victor writes all article text: the app never generates or suggests any.
+- **Momentum**: a thin ember line along the top fills toward today's goal. The chip bottom right shows today's words and your streak. Crossing the goal sets off the celebration: a ring draws itself, the streak number rolls up, embers burst and fly home to the streak flame. Milestones (3, 7, 14, 30, 50, 100, 365 days…) get a gold version. **⌘J** opens Momentum: a live flame that grows with your streak, today's ring, goal stepper, best streak, and a 20-week heat map where your current streak shimmers. Only *new* words count, so deleting text never lowers a day.
+- **From Elon** (**⌘I**): a side panel of prompts and things to think about, kept apart from your writing, with a check to mark each done. Ideas arrive from the inbox folder (below), live, with a badge for unseen ones, or can be added by hand.
+- **Covers** (**⌘K**): six text-free, minimalist cover options (Bloom, Horizon, Orbit, Rhythm, Mosaic, Waves) at exactly **5:2**, drawn offline from the piece's keywords and sentence rhythm, so different pieces get different covers and the same piece always gets the same ones. **Shuffle** gives new compositions from the same words; **Export PNG** saves 3000×1200 (default folder `covers/`).
+- **Your writing** (**⌘O**, or rest the pointer on the left edge): every piece with a preview, search, and delete. **⌘N** starts a new piece.
 
 ## Install on a Mac
-
-**Prebuilt (Apple silicon):** download `WritingDesk.zip` from the repo's latest GitHub Release, unzip it, and drag `WritingDesk.app` into `/Applications`. The app isn't notarized, so the first time you open it, right-click it and choose **Open**.
-
-**From source (any Mac with the Command Line Tools: `xcode-select --install`):**
 
 ```sh
 git clone https://github.com/WittorioJaro/writing-desk.git
 cd writing-desk
-./scripts/build-app.sh && ditto build/WritingDesk.app /Applications/WritingDesk.app
-open /Applications/WritingDesk.app
+make install      # needs Node.js; builds "Writing Desk.app" and copies it to /Applications
 ```
+
+The app is ad-hoc signed, not notarized. If macOS blocks the first launch, right-click it in Applications and choose **Open**. For an Intel Mac: `cd app && WD_ARCH=x64 npm run build`.
 
 Each Mac keeps its own copy in `~/Library/Application Support/WritingDesk/`. To share it between Macs, turn on [sync](#sync-between-macs-over-tailscale).
 
@@ -35,7 +33,7 @@ One Mac (the Mac mini) runs a tiny sync server that stores everything in a singl
 
 The server listens only on `127.0.0.1:8766`. `tailscale serve` publishes it to your tailnet as `http://<mac-name>:8765`. Tailscale accepts the connection, so the macOS firewall needs no exception and your LAN can't reach the server. Re-run the install script after pulling changes.
 
-**On every Mac (including the server Mac):** click the **Sync** toolbar button, enter `http://<mac-name>:8765`, and click **Turn on**. The app syncs at launch, every 30 seconds, and a few seconds after you stop typing. The status line shows the last sync or any error.
+**On every Mac (including the server Mac):** click the small dot in the top-right corner (or press ⌘,), enter `http://<mac-name>:8765`, and click **Turn on**. The app syncs at launch, every 30 seconds, and a few seconds after you stop typing. The dot turns green when synced, red on an error; the Sync panel shows the details.
 
 **What syncs:** articles, Elon's ideas (including done ticks), the daily goal, and the word history.
 - **Word counts:** tracked per Mac, so writing on two Macs on the same day adds up instead of double counting.
@@ -52,17 +50,18 @@ The server listens only on `127.0.0.1:8766`. `tailscale serve` publishes it to y
 | `server.log` | server log |
 | `~/Library/LaunchAgents/local.writingdesk.server.plist` | starts the server at login and restarts it if it stops |
 
-The app uses plain HTTP to reach the server. The traffic is encrypted by Tailscale (WireGuard), and the app bundle allows non-HTTPS connections for this.
+The app uses plain HTTP to reach the server; the traffic is encrypted by Tailscale (WireGuard). Only the app's background process talks to the server — the writing window itself has no network access at all.
 
-## Build & run
+## Build & test
 
 ```sh
-make test   # build + run the 22 checks (covers, persistence, accountability, ideas, failure safety, sync incl. a real two-Mac server run)
-make run    # build build/WritingDesk.app and open it
-make app    # just build the .app
+make test      # app unit tests (incl. two Macs syncing through the real Swift server), app end-to-end, server checks
+make run       # run the app from source
+make app       # build app/dist/Writing Desk-darwin-arm64/Writing Desk.app
+make install   # build and install to /Applications
 ```
 
-Or run it directly: `./scripts/build-app.sh && open build/WritingDesk.app`.
+Layout: `app/` is the Electron app (`src/core` = data, sync and inbox logic in the main process; `src/renderer` = the UI, motion and covers). `Sources/` is the Swift sync server and its checks.
 
 ## Data paths (all local)
 
@@ -80,7 +79,7 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 
 ### Inbox format
 
-One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, when you click the tray button in the ideas panel, or with ⇧⌘I. Files are handled one at a time: the ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. This save happens even when a file contains only duplicates, so a file is never archived while the ideas it repeats exist only in memory. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in the status line. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
+One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, whenever a file lands in the folder (it's watched), from **Check inbox** in the From Elon panel, or with ⇧⌘I. Files are handled one at a time: the ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. This save happens even when a file contains only duplicates, so a file is never archived while the ideas it repeats exist only in memory. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in a notice. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
 
 ```md
 # Ideas — 2026-11-21
@@ -94,6 +93,7 @@ If `state.json` exists but can't be read (for example, it's corrupted or was edi
 
 ## Notes
 
-- Nothing is sent over the network except to the sync server you configure. Covers are drawn with CoreGraphics and contain no text.
-- Tests are a plain executable (`WritingDeskChecks`) because the Swift Testing/XCTest macro plugins aren't available with Command Line Tools alone. For the same reason the UI avoids the `@State` macro and keeps view state in the `ObservableObject` model instead.
-- `COVER_SAMPLES_DIR=/tmp/x make test` also writes sample covers for visual review.
+- Nothing is sent over the network except to the sync server you configure. The window can only load local files (enforced by a content-security policy and a request filter), and covers are drawn offline on a canvas and contain no text.
+- The app never writes or suggests article text. Elon's prompts live in their own panel and never touch your writing.
+- Data format is unchanged from v1, so the Swift sync server and older copies keep working. Dates stay as Apple reference-date seconds and article fingerprints are exact 64-bit values, so this app and the server agree on what changed.
+- `npx electron test/shots.js /tmp/shots` (in `app/`) saves screenshots of every view from a seeded test workspace; `SHOT_THEME=light` for light mode.
