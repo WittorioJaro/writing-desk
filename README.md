@@ -5,7 +5,9 @@ A quiet macOS writing desk for Victor: a large empty page, a daily goal, a strea
 - **The page**: title and body in a big serif on an empty canvas. Start typing and everything else fades away; move the mouse to bring it back. Autosaved as you type. Victor writes all article text: the app never generates or suggests any.
 - **Momentum**: a thin ember line along the top fills toward today's goal. The chip bottom right shows today's words and your streak. Crossing the goal sets off the celebration: a ring draws itself, the streak number rolls up, embers burst and fly home to the streak flame. Milestones (3, 7, 14, 30, 50, 100, 365 days…) get a gold version. **⌘J** opens Momentum: a live flame that grows with your streak, today's ring, goal stepper, best streak, and a 20-week heat map where your current streak shimmers. Only *new* words count, so deleting text never lowers a day.
 - **From Elon** (**⌘I**): a side panel of prompts and things to think about, kept apart from your writing, with a check to mark each done. Ideas arrive from the inbox folder (below), live, with a badge for unseen ones, or can be added by hand.
-- **Covers** (**⌘K**): six text-free, minimalist cover options (Bloom, Horizon, Orbit, Rhythm, Mosaic, Waves) at exactly **5:2**, drawn offline from the piece's keywords and sentence rhythm, so different pieces get different covers and the same piece always gets the same ones. **Shuffle** gives new compositions from the same words; **Export PNG** saves 3000×1200 (default folder `covers/`).
+- **Covers** (**⌘K**): every cover is exactly **5:2** and has no text. Pick one with **Use as cover** and it sits at the top of the piece, above the title (hover it to change or remove it). **Export PNG** saves 3000×1200 (default folder `covers/`).
+  - **Suggested by Codex**: once a piece has a title and about 60 words, and you pause writing, the app asks your own Codex CLI to design three covers for it, in the background (about a minute). When they're ready, a small notice slides down from the top; click it to see them. It suggests again when the title changes or the piece grows by ~200 words, and **Suggest again** does it on demand. Turn it off with the switch at the bottom of the Covers panel.
+  - **Drawn from your words**: six offline styles (Bloom, Horizon, Orbit, Rhythm, Mosaic, Waves) built from the piece's keywords and sentence rhythm. **Shuffle** gives new compositions from the same words.
 - **Your writing** (**⌘O**, or rest the pointer on the left edge): every piece with a preview, search, and delete. **⌘N** starts a new piece.
 
 ## Install on a Mac
@@ -78,6 +80,7 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 | `device-id` | random id for this Mac (keeps per-Mac word counts apart) |
 | `sync.json` | sync server URL and on/off switch |
 | `sync-state.json` | which server versions this Mac last saw (used to detect conflicting edits) |
+| `covers.json` | the chosen cover per piece, Codex suggestions, and the Smart covers switch (this Mac only, not synced) |
 
 ### Inbox format
 
@@ -95,8 +98,10 @@ If `state.json` exists but can't be read (for example, it's corrupted or was edi
 
 ## Notes
 
-- Nothing is sent over the network except to the sync server you configure. The window can only load local files (enforced by a content-security policy and a request filter), and covers are drawn offline on a canvas and contain no text.
-- The app never writes or suggests article text. Elon's prompts live in their own panel and never touch your writing.
+- Nothing is sent over the network except to the sync server you configure, and, while **Smart suggestions with Codex** is on, the **title and the opening (~180 words)** of a piece, which the Codex CLI sends to OpenAI under your own sign-in. Codex runs read-only in an empty temporary folder with `--ephemeral`, so it keeps no session. The window itself can only load local files (enforced by a content-security policy and a request filter).
+- Codex returns SVG. Before it's shown, the app strips anything that isn't drawing (text, scripts, images, links, styles, outside references) and pins the frame to 1500×600, and it only ever displays it as an image. The model defaults to `gpt-6-luna` with high reasoning (set in `covers.json`), because the default in this Mac's Codex config isn't available with a ChatGPT sign-in.
+- The chosen cover is stored per Mac, so it doesn't sync yet: the Swift sync server would drop fields it doesn't know.
+- The app never writes or suggests article text (Codex only designs pictures, and is told not to put any words in them). Elon's prompts live in their own panel and never touch your writing.
 - Data format is unchanged from v1, so the Swift sync server and older copies keep working. Dates stay as Apple reference-date seconds and article fingerprints are exact 64-bit values, so this app and the server agree on what changed.
 - `npx electron test/shots.js /tmp/shots` (in `app/`) saves screenshots of every view from a seeded test workspace; `SHOT_THEME=light` for light mode.
 - `npx electron test/trace.js /tmp/trace [scenario…]` (in `app/`) traces every animation frame by frame under a controlled clock (timers, `requestAnimationFrame`, CSS animations and the canvas embers all step together) and saves one contact sheet per scenario, e.g. `celebration`, `momentum-open`, `covers-shuffle`.

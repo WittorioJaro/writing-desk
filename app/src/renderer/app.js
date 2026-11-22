@@ -1,5 +1,5 @@
 import { Field, Flame, odometer, tween } from './fx.js';
-import { seedFrom, renderCover, STYLES, EXPORT_W } from './covers.js';
+import { seedFrom, renderCover, renderSVGCover, STYLES, EXPORT_W } from './covers.js';
 import * as A from './acc.js';
 
 const $ = (s) => document.querySelector(s);
@@ -86,6 +86,7 @@ function autosize(t) {
 }
 
 function fillEditor() {
+  renderHero();
   const a = article();
   el.title.value = a ? a.title : '';
   el.text.value = a ? a.body : '';
@@ -420,82 +421,250 @@ $('#btn-inbox').addEventListener('click', async () => {
 });
 
 // ---------- Covers ----------
+// A "choice" is either a generated cover {kind:'gen', style, variant, seed} (the seed is frozen when
+// chosen, so the cover doesn't drift as you keep writing) or a Codex design {kind:'codex', svg, name}.
 let coverVariant = 0;
+let coversState = { settings: { smart: true }, available: false, articles: {}, running: null };
+const coverEntry = (id = currentId) => (id && coversState.articles[id]) || {};
 function coverSource() {
   const a = article();
   return a && (a.title.trim() || a.body.trim()) ? a : null;
 }
+const genChoice = (a, style) => ({ kind: 'gen', style, variant: coverVariant, seed: seedFrom(a.title, a.body), name: STYLES[style] });
+const choiceKey = (c) => (c ? (c.kind === 'gen' ? `gen:${c.style}:${c.variant}:${c.seed.hash}` : `codex:${c.svg.length}:${c.name}`) : '');
+async function renderChoice(c, width) {
+  return c.kind === 'gen' ? renderCover(c.seed, c.style, c.variant, width) : renderSVGCover(c.svg, width);
+}
+
+function coverCard(choice, i) {
+  const card = document.createElement('div');
+  card.className = 'cover';
+  card.style.setProperty('--i', i);
+  const holder = document.createElement('div'); holder.className = 'art';
+  renderChoice(choice, 1200).then((c) => holder.append(c)).catch(() => holder.classList.add('broken'));
+  const label = document.createElement('span'); label.className = 'name'; label.textContent = choice.name || '';
+  const actions = document.createElement('div'); actions.className = 'actions';
+  const use = document.createElement('button'); use.className = 'use'; use.textContent = 'Use as cover';
+  use.addEventListener('click', (e) => { e.stopPropagation(); useCover(card._choice); });
+  const exp = document.createElement('button'); exp.className = 'export'; exp.textContent = 'Export';
+  exp.addEventListener('click', (e) => { e.stopPropagation(); exportChoice(card._choice); });
+  actions.append(use, exp);
+  const tick = document.createElement('span'); tick.className = 'tick';
+  tick.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  card.append(holder, label, actions, tick);
+  card._choice = choice;
+  card.dataset.key = choiceKey(choice);
+  card.classList.toggle('chosen', card.dataset.key === choiceKey(coverEntry().selected));
+  card.addEventListener('click', () => openLightbox(card._choice));
+  requestAnimationFrame(() => card.classList.add('in'));
+  return card;
+}
+
+function markChosen() {
+  const key = choiceKey(coverEntry().selected);
+  document.querySelectorAll('#overlay-covers .cover').forEach((c) => c.classList.toggle('chosen', c.dataset.key === key));
+}
+
+function renderSmart() {
+  const sec = $('#smart-section'), grid = $('#smart-grid'), status = $('#smart-status');
+  const a = coverSource();
+  const on = coversState.settings.smart;
+  $('#smart-toggle').checked = !!on;
+  $('#smart-toggle').disabled = !coversState.available;
+  $('#smart-note').textContent = coversState.available
+    ? 'Once a piece has a title and a few sentences, Codex designs three covers for it. Only the title and the opening are sent, through your own Codex sign-in.'
+    : 'Codex isn’t installed on this Mac (no codex command found), so only the covers drawn here are available.';
+  sec.hidden = !on || !coversState.available || !a;
+  if (sec.hidden) return;
+  const sug = coverEntry(a.id).suggestions;
+  const running = coversState.running === a.id || sug?.status === 'running';
+  $('#btn-suggest').hidden = running;
+  $('#btn-suggest').textContent = sug?.covers?.length ? 'Suggest again' : 'Suggest now';
+  const key = running ? 'running' : sug?.status === 'ready' ? `ready:${sug.at}` : sug?.status === 'error' ? `error:${sug.at}` : 'none';
+  if (grid.dataset.key === key) { markChosen(); return; }
+  grid.dataset.key = key;
+  grid.innerHTML = '';
+  if (running) {
+    status.textContent = 'Codex is drawing covers for this piece… usually about a minute.';
+    for (let i = 0; i < 3; i++) { const sk = document.createElement('div'); sk.className = 'cover skeleton'; sk.style.setProperty('--i', i); grid.append(sk); requestAnimationFrame(() => sk.classList.add('in')); }
+    return;
+  }
+  if (sug?.covers?.length) {
+    status.textContent = sug.status === 'error' ? `Last try failed: ${sug.error}` : `Designed by Codex for “${sug.basis.title.trim()}”.`;
+    sug.covers.forEach((c, i) => {
+      const choice = { kind: 'codex', svg: c.svg, name: c.name, idea: c.idea };
+      const card = coverCard(choice, i);
+      card.title = c.idea;
+      grid.append(card);
+    });
+  } else if (sug?.status === 'error') {
+    status.textContent = `Codex couldn’t draw covers: ${sug.error}`;
+  } else {
+    const words = A.wordCount(a.body);
+    status.textContent = !a.title.trim() ? 'Give the piece a title and Codex will suggest covers.'
+      : words < 60 ? `Codex will suggest covers after a few more sentences (${60 - words} more words).`
+      : 'Codex will suggest covers when you pause writing.';
+  }
+}
+
 function renderCovers(animate) {
   const grid = $('#cover-grid');
   const a = coverSource();
+  renderSmart();
   if (!a) {
     grid.innerHTML = '<div class="covers-empty">Write a little first. Covers are drawn from your words.</div>';
     $('#btn-shuffle').hidden = true;
     return;
   }
   $('#btn-shuffle').hidden = false;
-  $('#covers-caption').textContent = `Drawn from the words in “${a.title.trim() || 'Untitled'}”. 5:2, no text.`;
-  const seed = seedFrom(a.title, a.body);
+  $('#covers-caption').textContent = `For “${a.title.trim() || 'Untitled'}”. Every cover is 5:2, with no text.`;
   if (animate || grid.children.length !== STYLES.length) {
     grid.innerHTML = '';
-    STYLES.forEach((name, i) => {
-      const card = document.createElement('div');
-      card.className = 'cover';
-      card.style.setProperty('--i', i);
-      card.append(renderCover(seed, i, coverVariant, 1200));
-      const label = document.createElement('span'); label.className = 'name'; label.textContent = name;
-      const btn = document.createElement('button'); btn.className = 'export'; btn.textContent = 'Export PNG';
-      btn.addEventListener('click', (e) => { e.stopPropagation(); exportCover(i); });
-      card.addEventListener('click', () => openLightbox(i));
-      card.append(label, btn);
-      grid.append(card);
-      requestAnimationFrame(() => card.classList.add('in'));
-    });
-  } else {
-    // Crossfade: the new cover blurs in on top of the old one, then the old one is dropped.
-    [...grid.children].forEach((card, i) => {
-      setTimeout(() => {
-        card.querySelectorAll('canvas.incoming').forEach((c) => c.remove());
-        const next = renderCover(seed, i, coverVariant, 1200);
-        next.className = 'incoming';
-        card.querySelector('canvas').after(next);
-        requestAnimationFrame(() => requestAnimationFrame(() => next.classList.add('shown')));
-        setTimeout(() => {
-          if (!next.isConnected) return;
-          [...card.querySelectorAll('canvas')].filter((c) => c !== next).forEach((c) => c.remove());
-          next.className = '';
-        }, 700);
-      }, i * 50);
-    });
-  }
+    STYLES.forEach((_, i) => grid.append(coverCard(genChoice(a, i), i + 3)));
+  } else markChosen();
 }
-$('#btn-shuffle').addEventListener('click', () => { coverVariant++; renderCovers(false); });
-
-async function exportCover(style) {
+$('#btn-shuffle').addEventListener('click', () => {
+  coverVariant++;
   const a = coverSource();
   if (!a) return;
-  const canvas = renderCover(seedFrom(a.title, a.body), style, coverVariant, EXPORT_W);
+  // Crossfade each card in place: the new composition blurs in over the old one.
+  [...$('#cover-grid').children].forEach((card, i) => {
+    setTimeout(() => {
+      const choice = genChoice(a, i);
+      const art = card.querySelector('.art');
+      const next = renderCover(choice.seed, i, coverVariant, 1200);
+      art.querySelectorAll('canvas.incoming').forEach((c) => c.remove());
+      next.className = 'incoming';
+      art.append(next);
+      requestAnimationFrame(() => requestAnimationFrame(() => next.classList.add('shown')));
+      setTimeout(() => {
+        if (!next.isConnected) return;
+        [...art.querySelectorAll('canvas')].filter((c) => c !== next).forEach((c) => c.remove());
+        next.className = '';
+      }, 700);
+      card._choice = choice;
+      card.dataset.key = choiceKey(choice);
+      card.classList.toggle('chosen', card.dataset.key === choiceKey(coverEntry().selected));
+    }, i * 50);
+  });
+});
+$('#btn-suggest').addEventListener('click', async () => {
+  const a = coverSource();
+  if (!a) return;
+  const r = await desk.suggestCovers(a.id);
+  if (!r.ok) toast(r.error, 'error');
+});
+$('#smart-toggle').addEventListener('change', async (e) => {
+  coversState = await desk.coverSettings({ smart: e.target.checked });
+  renderSmart();
+});
+
+async function exportChoice(choice) {
+  const a = coverSource();
+  const canvas = await renderChoice(choice, EXPORT_W);
   const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const name = `${(a.title.trim() || 'cover').slice(0, 40)} – ${STYLES[style]}`;
+  const name = `${((a && a.title.trim()) || 'cover').slice(0, 40)} – ${choice.name || 'cover'}`;
   const saved = await desk.exportCover(bytes, name);
   if (saved) toast(`Saved ${saved.split('/').pop()}`);
   return saved;
 }
-let lbStyle = 0;
-function openLightbox(style) {
+const exportCover = (style) => { const a = coverSource(); return a ? exportChoice(genChoice(a, style)) : null; };
+
+async function useCover(choice) {
   const a = coverSource();
   if (!a) return;
-  lbStyle = style;
-  const src = renderCover(seedFrom(a.title, a.body), style, coverVariant, 2400);
+  const { idea, ...keep } = choice;
+  heroHoldUntil = Date.now() + 600; // let the panel close first; renderHero below animates the change
+  coversState = await desk.selectCover(a.id, keep);
+  closeOverlays();
+  el.scroller.scrollTo({ top: 0, behavior: 'smooth' });
+  setTimeout(() => renderHero({ animate: true }), 260);
+}
+
+let lbChoice = null;
+async function openLightbox(choice) {
+  lbChoice = choice;
+  const src = await renderChoice(choice, 2400);
   const c = $('#lightbox-canvas');
   c.width = src.width; c.height = src.height;
   c.getContext('2d').drawImage(src, 0, 0);
-  $('#lb-name').textContent = STYLES[style];
+  $('#lb-name').textContent = choice.name || '';
   $('#lightbox').classList.add('open');
 }
 $('#lightbox').addEventListener('click', (e) => { if (e.target.id === 'lightbox') $('#lightbox').classList.remove('open'); });
-$('#lb-export').addEventListener('click', () => exportCover(lbStyle));
+$('#lb-export').addEventListener('click', () => lbChoice && exportChoice(lbChoice));
+$('#lb-use').addEventListener('click', () => lbChoice && useCover(lbChoice));
+
+// ---------- The chosen cover, at the top of the page ----------
+let heroKey = '';
+let heroHoldUntil = 0;
+async function renderHero({ animate = false } = {}) {
+  const hero = $('#page-cover');
+  const sel = coverEntry().selected;
+  const key = sel ? `${currentId}:${choiceKey(sel)}` : '';
+  if (key === heroKey) return;
+  heroKey = key;
+  if (!sel) { hero.classList.remove('on'); return; }
+  const canvas = await renderChoice(sel, 1800).catch(() => null);
+  if (heroKey !== key || !canvas) return;
+  const art = $('#page-cover .pc-art');
+  if (animate && hero.classList.contains('on')) {
+    // swap: new art blurs in over the old one
+    canvas.className = 'incoming';
+    art.append(canvas);
+    requestAnimationFrame(() => requestAnimationFrame(() => canvas.classList.add('shown')));
+    setTimeout(() => { [...art.querySelectorAll('canvas')].filter((x) => x !== canvas).forEach((x) => x.remove()); canvas.className = ''; }, 700);
+  } else {
+    art.replaceChildren(canvas);
+    if (animate) { hero.classList.remove('on'); void hero.offsetWidth; }
+    hero.classList.add('on');
+  }
+}
+$('#pc-change').addEventListener('click', () => openOverlay('covers'));
+$('#pc-remove').addEventListener('click', async () => {
+  const a = article();
+  if (!a) return;
+  coversState = await desk.selectCover(a.id, null);
+  renderHero();
+});
+
+// ---------- "Covers suggested" notice, sliding softly from the top ----------
+let noticeTimer = null;
+async function showCoverNotice(id) {
+  const a = article(id);
+  const sug = coverEntry(id).suggestions;
+  if (!a || !sug?.covers?.length) return;
+  const n = $('#cover-notice');
+  const thumbs = n.querySelector('.thumbs');
+  thumbs.replaceChildren();
+  for (const c of sug.covers.slice(0, 3)) {
+    const t = await renderSVGCover(c.svg, 240).catch(() => null);
+    if (t) thumbs.append(t);
+  }
+  n.querySelector('.what').textContent = `${sug.covers.length} covers for “${a.title.trim()}”`;
+  n.dataset.id = id;
+  n.classList.add('show');
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(hideCoverNotice, 9000);
+}
+function hideCoverNotice() { $('#cover-notice').classList.remove('show'); }
+$('#cover-notice').addEventListener('mouseenter', () => clearTimeout(noticeTimer));
+$('#cover-notice').addEventListener('mouseleave', () => { noticeTimer = setTimeout(hideCoverNotice, 3000); });
+$('#cover-notice').addEventListener('click', () => {
+  const id = $('#cover-notice').dataset.id;
+  hideCoverNotice();
+  if (id && id !== currentId) switchTo(id, { focus: false });
+  setTimeout(() => openOverlay('covers'), id !== currentId ? 220 : 0);
+});
+
+desk.onCovers(({ covers, id, status }) => {
+  coversState = covers;
+  $('#btn-covers').classList.toggle('drawing', !!covers.running);
+  if ($('#overlay-covers').classList.contains('open')) renderSmart();
+  if (id === currentId && Date.now() > heroHoldUntil) renderHero({ animate: true });
+  if (status === 'ready' && !$('#overlay-covers').classList.contains('open')) showCoverNotice(id);
+});
 
 // ---------- Sync ----------
 function renderSync(s) {
@@ -661,6 +830,9 @@ async function boot() {
   updateMomentum({ initial: true });
   renderIdeas();
   renderSync(snap.sync);
+  coversState = snap.covers;
+  $('#btn-covers').classList.toggle('drawing', !!coversState.running);
+  renderHero();
   requestAnimationFrame(() => {
     el.body.classList.remove('booting');
     setTimeout(() => {
@@ -673,4 +845,4 @@ async function boot() {
 boot();
 
 // Exposed for the end-to-end test.
-window.__desk = { celebrate, openOverlay, closeAll, switchTo, get snap() { return snap; }, get currentId() { return currentId; }, seedFrom, renderCover, exportCover, op };
+window.__desk = { celebrate, openOverlay, closeAll, switchTo, useCover, genChoice, showCoverNotice, get coversState() { return coversState; }, get snap() { return snap; }, get currentId() { return currentId; }, seedFrom, renderCover, exportCover, op };

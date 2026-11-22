@@ -16,6 +16,7 @@ fs.mkdirSync(out, { recursive: true });
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-trace-home-'));
 process.env.WRITING_DESK_HOME = home;
 process.env.WD_E2E = '1';
+process.env.WD_CODEX_BIN = path.join(__dirname, 'fake-codex.js'); // never call the real Codex from tests
 require('./seed')(home);
 
 const { app, BrowserWindow, nativeTheme } = require('electron');
@@ -86,7 +87,11 @@ whenReady.then(async ({ win }) => {
     { name: 'momentum-open', action: `window.__desk.openOverlay('momentum')`, ms: 2600, step: 100 },
     { name: 'goal-stepper', action: `document.querySelector('#goal-plus').click()`, ms: 1200, step: 60 },
     { name: 'momentum-close', action: `window.__desk.closeAll()`, ms: 900, step: 45 },
-    { name: 'covers-open', action: `window.__desk.openOverlay('covers')`, ms: 1600, step: 80 },
+    { name: 'cover-notice', setup: key, action: `window.__desk.showCoverNotice('A0000000-0000-4000-8000-000000000001')`, ms: 1400, step: 70 },
+    { name: 'cover-notice-open', action: `document.querySelector('#cover-notice').click()`, ms: 1400, step: 70 },
+    { name: 'use-cover', action: `document.querySelector('#smart-grid .cover .use').click()`, ms: 1800, step: 90 },
+    { name: 'change-cover', setup: `window.__desk.openOverlay('covers')`, settle: 1400, action: `document.querySelectorAll('#smart-grid .cover .use')[1].click()`, ms: 1600, step: 80 },
+    { name: 'covers-open', setup: `window.__desk.closeAll()`, action: `window.__desk.openOverlay('covers')`, ms: 1600, step: 80 },
     { name: 'covers-shuffle', action: `document.querySelector('#btn-shuffle').click()`, ms: 1400, step: 70 },
     { name: 'lightbox', action: `document.querySelector('.cover').click()`, ms: 900, step: 45 },
     { name: 'lightbox-close', action: `document.querySelector('#lightbox').dispatchEvent(new MouseEvent('click', { bubbles: true }))`, ms: 800, step: 40 },

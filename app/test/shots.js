@@ -10,6 +10,7 @@ fs.mkdirSync(out, { recursive: true });
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-shots-home-'));
 process.env.WRITING_DESK_HOME = home;
 process.env.WD_E2E = '1';
+process.env.WD_CODEX_BIN = path.join(__dirname, 'fake-codex.js'); // never call the real Codex from tests
 
 require('./seed')(home);
 
@@ -37,6 +38,10 @@ whenReady.then(async ({ win }) => {
   await js(`window.__desk.openOverlay('covers')`); await wait(1500); await shot('6-covers');
   await js(`window.__desk.openOverlay('sync')`); await wait(900); await shot('7-sync');
   await js(`window.__desk.closeAll(); window.__desk.celebrate(7)`); await wait(900); await shot('8-celebrate-a'); await wait(900); await shot('8-celebrate-b'); await wait(1200); await shot('8-celebrate-c');
+  await wait(5000);
+  await js(`window.__desk.showCoverNotice('A0000000-0000-4000-8000-000000000001')`); await wait(1200); await shot('9-cover-notice');
+  await js(`document.querySelector('#cover-notice').click()`); await wait(1500); await shot('10-covers-panel');
+  await js(`document.querySelector('#smart-grid .cover .use').click()`); await wait(1800); await shot('11-page-cover');
   console.log('shots in', out);
   app.quit();
 });

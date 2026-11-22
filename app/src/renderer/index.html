@@ -50,6 +50,11 @@
 
   <main id="scroller">
     <article id="page">
+      <figure id="page-cover" aria-label="Cover">
+        <div class="pc-clip"><div class="pc-art"></div>
+          <div class="pc-actions"><button class="pill" id="pc-change">Change cover</button><button class="pill" id="pc-remove">Remove</button></div>
+        </div>
+      </figure>
       <textarea id="title" rows="1" placeholder="Untitled" spellcheck="true" aria-label="Title"></textarea>
       <textarea id="body" placeholder="Begin anywhere." spellcheck="true" aria-label="Your writing"></textarea>
     </article>
@@ -126,10 +131,22 @@
       <button class="close icon" data-close><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
       <div class="sheet-head">
         <h2>Covers</h2>
-        <p class="caption" id="covers-caption">Drawn from the words in your piece. 5:2, no text.</p>
-        <button class="ghost" id="btn-shuffle"><svg viewBox="0 0 24 24"><path d="M4 7h4l8 10h4M4 17h4l2.5-3M14 10l2-3h4M17.5 4.5L20 7l-2.5 2.5M17.5 14.5L20 17l-2.5 2.5"/></svg>Shuffle</button>
+        <p class="caption" id="covers-caption">Every cover is 5:2, with no text.</p>
       </div>
-      <div class="cover-grid" id="cover-grid"></div>
+      <section class="cover-sec" id="smart-section">
+        <div class="sec-head"><h3><span class="spark"></span>Suggested by Codex</h3><button class="ghost" id="btn-suggest">Suggest again</button></div>
+        <p class="caption" id="smart-status"></p>
+        <div class="cover-grid three" id="smart-grid"></div>
+      </section>
+      <section class="cover-sec">
+        <div class="sec-head"><h3>Drawn from your words</h3>
+          <button class="ghost" id="btn-shuffle"><svg viewBox="0 0 24 24"><path d="M4 7h4l8 10h4M4 17h4l2.5-3M14 10l2-3h4M17.5 4.5L20 7l-2.5 2.5M17.5 14.5L20 17l-2.5 2.5"/></svg>Shuffle</button></div>
+        <div class="cover-grid" id="cover-grid"></div>
+      </section>
+      <div class="sheet-foot">
+        <label class="switch"><input type="checkbox" id="smart-toggle"><span class="knob"></span></label>
+        <div><b>Smart suggestions with Codex</b><p class="caption" id="smart-note"></p></div>
+      </div>
     </div>
   </section>
 
@@ -148,7 +165,7 @@
     </div>
   </section>
 
-  <div id="lightbox"><canvas id="lightbox-canvas"></canvas><div class="lb-bar"><span id="lb-name"></span><button class="primary" id="lb-export">Export PNG</button></div></div>
+  <div id="lightbox"><canvas id="lightbox-canvas"></canvas><div class="lb-bar"><span id="lb-name"></span><button class="primary" id="lb-use">Use as cover</button><button class="ghost light" id="lb-export">Export PNG</button></div></div>
 
   <canvas id="fx"></canvas>
   <div id="celebrate" aria-live="polite">
@@ -159,6 +176,7 @@
       <div class="c-sub" id="c-sub">Goal met</div>
     </div>
   </div>
+  <button id="cover-notice" aria-live="polite"><span class="thumbs"></span><span class="txt"><span class="what"></span><span class="sub">Suggested by Codex · View</span></span></button>
   <div id="toast"></div>
 
   <script type="module" src="app.js"></script>

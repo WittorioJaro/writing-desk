@@ -8,6 +8,11 @@ const assert = require('node:assert/strict');
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-e2e-'));
 process.env.WRITING_DESK_HOME = home;
 process.env.WD_E2E = '1';
+// Smart covers run against a stand-in Codex that records what it was sent.
+process.env.WD_CODEX_BIN = path.join(__dirname, 'fake-codex.js');
+process.env.WD_COVER_DEBOUNCE = '400';
+const codexLog = path.join(home, 'codex-calls.jsonl');
+process.env.FAKE_CODEX_LOG = codexLog;
 
 const { app } = require('electron');
 const { whenReady } = require('../src/main.js');
@@ -60,6 +65,55 @@ whenReady.then(async ({ win, ws }) => {
     await js(`document.querySelector('#celebrate').classList.remove('go')`);
     await type('#body', 'More. ');
     assert.equal(await js(`document.querySelector('#celebrate').classList.contains('go')`), false, 'no repeat on the same day');
+  });
+
+  await check('smart covers: after a title and some words, Codex suggests covers in the background, sent only title + opening', async () => {
+    assert.equal(fs.existsSync(codexLog), false, 'nothing sent before there are enough words');
+    await type('#body', 'Rivers keep their promises slowly, one bend at a time, and the valley learns their shape. ');
+    await wait(1500); // the writer pauses; Codex runs in the background
+    const calls = fs.readFileSync(codexLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.ok(calls.length >= 1);
+    const last = calls[calls.length - 1];
+    assert.match(last.prompt, /Article title: Rivers and patience\nOpening of the article:\nWater finds a way/);
+    assert.ok(last.args.includes('read-only'));
+    const id = ws.state.articles[0].id;
+    const sug = JSON.parse(fs.readFileSync(path.join(home, 'covers.json'), 'utf8')).articles[id].suggestions;
+    assert.equal(sug.status, 'ready');
+    assert.equal(sug.covers.length, 3);
+    assert.ok(sug.covers.every((c) => !/<text|<script/.test(c.svg)), 'sanitized');
+  });
+
+  await check('smart covers: a soft notice slides in from the top and opens the suggestions', async () => {
+    const id = ws.state.articles[0].id;
+    await js(`window.__desk.showCoverNotice('${id}')`);
+    await wait(900);
+    assert.equal(await js(`document.querySelector('#cover-notice').classList.contains('show')`), true);
+    assert.equal(await js(`document.querySelectorAll('#cover-notice .thumbs canvas').length`), 3);
+    assert.match(await js(`document.querySelector('#cover-notice .what').textContent`), /3 covers for “Rivers and patience”/);
+    await js(`document.querySelector('#cover-notice').click()`);
+    await wait(900);
+    assert.equal(await js(`document.querySelector('#overlay-covers').classList.contains('open')`), true);
+    assert.equal(await js(`document.querySelectorAll('#smart-grid .cover').length`), 3);
+    assert.equal(await js(`document.querySelectorAll('#cover-grid .cover').length`), 6);
+  });
+
+  await check('chosen cover sits at the top of the page, per piece, and survives a restart of the view', async () => {
+    const id = ws.state.articles[0].id;
+    await js(`document.querySelector('#smart-grid .cover .use').click()`);
+    await wait(1400);
+    assert.equal(await js(`document.querySelector('#overlay-covers').classList.contains('open')`), false, 'panel closes');
+    assert.equal(await js(`document.querySelector('#page-cover').classList.contains('on')`), true);
+    const r = await js(`(() => { const c = document.querySelector('#page-cover canvas'); const b = c.getBoundingClientRect(); return [c.width, c.height, Math.round(b.width / b.height * 100)]; })()`);
+    assert.equal(r[0] * 2, r[1] * 5, 'exactly 5:2');
+    assert.equal(r[2], 250);
+    const saved = JSON.parse(fs.readFileSync(path.join(home, 'covers.json'), 'utf8')).articles[id].selected;
+    assert.equal(saved.kind, 'codex');
+    // a drawn cover can be chosen too, and its look is frozen even as the text changes
+    await js(`window.__desk.useCover(window.__desk.genChoice(window.__desk.snap.state.articles.find(a => a.id === '${id}'), 2))`);
+    await wait(900);
+    const sel = JSON.parse(fs.readFileSync(path.join(home, 'covers.json'), 'utf8')).articles[id].selected;
+    assert.equal(sel.kind, 'gen');
+    assert.ok(sel.seed && sel.seed.keywords.length, 'seed frozen with the choice');
   });
 
   await check('covers: six options, exactly 5:2, content-dependent and deterministic', async () => {
@@ -124,6 +178,11 @@ whenReady.then(async ({ win, ws }) => {
     await wait(500);
     assert.match(await js(`document.querySelector('#body').value`), /^Water finds/);
     assert.equal(ws.state.articles.length, 2);
+    assert.equal(await js(`document.querySelector('#page-cover').classList.contains('on')`), true, 'its cover is back');
+    const second = ws.state.articles.find((a) => a.title === 'Second');
+    await js(`window.__desk.switchTo('${second.id}')`);
+    await wait(500);
+    assert.equal(await js(`document.querySelector('#page-cover').classList.contains('on')`), false, 'other piece has no cover');
   });
 
   const failed = results.filter((r) => r[0] === 'fail').length;

@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-module.exports = function seed(home) {
+module.exports = function seed(home, { covers = true } = {}) {
   const REF = 978307200;
   const ref = (ms) => ms / 1000 - REF;
   const day = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -28,4 +28,12 @@ module.exports = function seed(home) {
     accountability: { dailyGoal: 500, byDevice: { 'SHOT-DEVICE': history } },
     tombstones: {},
   }));
+  // Real Codex suggestions for the first piece (test/fixtures/codex-covers.json), so traces show the real thing.
+  if (covers) {
+    const { covers: list } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'codex-covers.json'), 'utf8'));
+    fs.writeFileSync(path.join(home, 'covers.json'), JSON.stringify({
+      settings: { smart: true, model: 'gpt-6-luna', effort: 'high' },
+      articles: { 'A0000000-0000-4000-8000-000000000001': { suggestions: { status: 'ready', at: Date.now(), basis: { title: 'The quiet discipline of small streaks', words: 85 }, covers: list } } },
+    }));
+  }
 };

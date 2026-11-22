@@ -5,12 +5,14 @@ const fs = require('node:fs');
 const { Store } = require('./core/store');
 const { Workspace } = require('./core/workspace');
 const M = require('./core/model');
+const { SmartCovers } = require('./core/smartcovers');
 
 const E2E = process.env.WD_E2E === '1';
 if (!E2E && !app.requestSingleInstanceLock()) app.quit();
 
 let win = null;
 let ws = null;
+let smart = null;
 const sync = { status: 'off', message: 'Sync is off', inFlight: false, timer: null, debounce: null, lastConflicts: 0 };
 let readyResolve;
 const whenReady = new Promise((r) => { readyResolve = r; });
@@ -23,6 +25,7 @@ function snapshot() {
     loadError: ws.loadError,
     paths: { root: ws.store.root, inbox: ws.store.inboxDir, covers: ws.store.coversDir, state: ws.store.stateFile },
     sync: { config: ws.syncConfig, status: sync.status, message: sync.message, lastSync: ws.syncState.lastSync ?? null },
+    covers: smart.snapshot(),
   };
 }
 
@@ -94,11 +97,12 @@ function watchInbox() {
 
 // ---- IPC --------------------------------------------------------------------------------------------
 
+const considerCovers = (id) => { const a = ws.article(id); if (a) smart.consider(a, (i) => ws.article(i)); };
 const ops = {
   newArticle: () => ws.newArticle(),
-  setTitle: (id, t) => ws.setTitle(id, t),
-  setBody: (id, b) => ws.setBody(id, b),
-  deleteArticle: (id) => ws.deleteArticle(id),
+  setTitle: (id, t) => { ws.setTitle(id, t); considerCovers(id); },
+  setBody: (id, b) => { ws.setBody(id, b); considerCovers(id); },
+  deleteArticle: (id) => { ws.deleteArticle(id); smart.forget(id); },
   setGoal: (g) => ws.setGoal(g),
   addIdea: (t) => ws.addIdea(t),
   toggleIdea: (id) => ws.toggleIdea(id),
@@ -117,6 +121,17 @@ function registerIPC() {
     }
   });
   ipcMain.handle('desk:inbox', () => importInbox(true));
+  // Covers: chosen cover per piece, and Codex suggestions (local only, see core/smartcovers.js)
+  ipcMain.handle('desk:cover-select', (_e, id, choice) => { smart.select(id, choice); return smart.snapshot(); });
+  ipcMain.handle('desk:cover-settings', (_e, s) => { smart.setSettings(s); return smart.snapshot(); });
+  ipcMain.handle('desk:cover-suggest', async (_e, id) => {
+    const a = ws.article(id);
+    if (!a) return { ok: false, error: 'No such piece' };
+    if (!smart.bin) return { ok: false, error: 'Codex isn’t installed (looked for the codex command)' };
+    if (smart.running) return { ok: false, error: 'Codex is already drawing covers' };
+    smart.generate(a).catch(() => {}); // runs in the background; progress arrives as desk:covers events
+    return { ok: true };
+  });
   ipcMain.handle('desk:sync-config', (_e, cfg) => {
     try { ws.setSyncConfig(cfg); } catch (e) { return { ok: false, error: e.message }; }
     restartSyncLoop();
@@ -208,6 +223,7 @@ app.whenReady().then(() => {
     cb({ cancel: !/^(file|data|blob|devtools|chrome-extension):/.test(details.url) });
   });
   ws = new Workspace(new Store());
+  smart = new SmartCovers(ws.store.root, { debounceMs: Number(process.env.WD_COVER_DEBOUNCE) || 6000, onChange: (id, status) => send('desk:covers', { covers: smart.snapshot(), id, status }) });
   ws.onSaveError = (e) => send('desk:toast', { kind: 'error', text: `Not saved: ${e.message}` });
   registerIPC();
   buildMenu();
