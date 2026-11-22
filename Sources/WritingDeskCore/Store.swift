@@ -7,11 +7,17 @@ import Foundation
 ///   inbox/               drop .txt / .md files with ideas from Elon here
 ///   inbox/imported/      processed inbox files are moved here
 ///   covers/              default PNG export location
+///   device-id            random id for this Mac (keeps per-Mac word counts apart when syncing)
+///   sync.json            sync server URL + on/off
+///   sync-state.json      what the server last confirmed (used to detect conflicting edits)
 public final class Store {
     public let root: URL
     public var stateURL: URL { root.appendingPathComponent("state.json") }
     public var inboxURL: URL { root.appendingPathComponent("inbox", isDirectory: true) }
     public var coversURL: URL { root.appendingPathComponent("covers", isDirectory: true) }
+    public var deviceIDURL: URL { root.appendingPathComponent("device-id") }
+    public var syncConfigURL: URL { root.appendingPathComponent("sync.json") }
+    public var syncStateURL: URL { root.appendingPathComponent("sync-state.json") }
 
     public static var defaultRoot: URL {
         if let env = ProcessInfo.processInfo.environment["WRITING_DESK_HOME"], !env.isEmpty {
@@ -32,15 +38,10 @@ public final class Store {
     public func load() throws -> AppState {
         guard FileManager.default.fileExists(atPath: stateURL.path) else { return AppState() }
         let data = try Data(contentsOf: stateURL)
-        let dec = JSONDecoder()
-        dec.dateDecodingStrategy = .iso8601
-        return try dec.decode(AppState.self, from: data)
+        return try JSONCoding.decoder().decode(AppState.self, from: data)
     }
 
     public func save(_ state: AppState) throws {
-        let enc = JSONEncoder()
-        enc.dateEncodingStrategy = .iso8601
-        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try enc.encode(state).write(to: stateURL, options: .atomic)
+        try JSONCoding.encoder().encode(state).write(to: stateURL, options: .atomic)
     }
 }

@@ -10,6 +10,12 @@ final class DeskModel: ObservableObject {
     @Published var showCovers = false
     @Published var showIdeas = true
     @Published var ideaDraft = ""
+    @Published var showSync = false
+    @Published var syncURLDraft = ""
+    @Published var syncStatus = "Sync off"
+    private var syncInFlight = false
+    private var pendingSync: Task<Void, Never>?
+    private var syncTimer: Timer?
     let workspace: Workspace
     var store: Store { workspace.store }
     /// Non-nil when state.json couldn't be loaded: the app is read-only until relaunched after recovery.
@@ -21,18 +27,75 @@ final class DeskModel: ObservableObject {
         do { store = try Store() } catch { fatalError("Can't create data folder at \(Store.defaultRoot.path): \(error)") }
         workspace = Workspace(store: store)
         state = workspace.state
+        syncURLDraft = workspace.syncConfig.serverURL
         if workspace.isWritable {
-            if state.articles.isEmpty { mutate { $0.articles.append(Article(title: "First article")) } }
             checkInbox()
+            startSyncLoop()
         } else {
             status = "Read-only: state.json couldn't be loaded"
+            syncStatus = "Sync paused (read-only)"
         }
         selection = state.articles.first?.id
     }
 
+    // MARK: Sync (only with the server you configure, e.g. your Mac mini over Tailscale)
+
+    var syncEnabled: Bool { workspace.syncConfig.enabled && workspace.syncConfig.url != nil }
+
+    private func startSyncLoop() {
+        syncTimer?.invalidate()
+        guard syncEnabled else { syncStatus = "Sync off"; return }
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.syncNow() }
+        }
+        syncNow()
+    }
+
+    /// Debounced push after edits.
+    private func scheduleSync() {
+        guard syncEnabled else { return }
+        pendingSync?.cancel()
+        pendingSync = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.syncNow()
+        }
+    }
+
+    func syncNow(followUp: Bool = true) {
+        guard isWritable, syncEnabled, let url = workspace.syncConfig.url, !syncInFlight else { return }
+        syncInFlight = true
+        syncStatus = "Syncing…"
+        let sent = workspace.makeSyncRequest()
+        Task { @MainActor in
+            do {
+                let response = try await SyncClient.exchange(sent, server: url)
+                let outcome = try workspace.applySync(sent: sent, response: response)
+                state = workspace.state
+                if let sel = selection, !state.articles.contains(where: { $0.id == sel }) { selection = state.articles.first?.id }
+                let time = Date().formatted(date: .omitted, time: .shortened)
+                syncStatus = outcome.conflicts > 0
+                    ? "Synced \(time) · \(outcome.conflicts) conflict cop\(outcome.conflicts == 1 ? "y" : "ies") kept"
+                    : "Synced \(time)"
+                syncInFlight = false
+                if outcome.needsPush && followUp { syncNow(followUp: false) }
+            } catch {
+                syncStatus = "Sync failed: \(error.localizedDescription)"
+                syncInFlight = false
+            }
+        }
+    }
+
+    func saveSyncSettings(enabled: Bool) {
+        let config = SyncConfig(serverURL: syncURLDraft.trimmingCharacters(in: .whitespacesAndNewlines), enabled: enabled)
+        if enabled && config.url == nil { syncStatus = SyncError.badURL.localizedDescription; return }
+        do { try workspace.setSyncConfig(config) } catch { syncStatus = "Couldn't save sync settings: \(error.localizedDescription)"; return }
+        if isWritable { startSyncLoop() }
+    }
+
     /// Every write goes through here. A read-only workspace refuses it and nothing is written.
     private func mutate(_ change: (inout AppState) -> Void) {
-        do { try workspace.mutate(change) } catch { status = "Not saved: \(error.localizedDescription)" }
+        do { try workspace.mutate(change); scheduleSync() } catch { status = "Not saved: \(error.localizedDescription)" }
         state = workspace.state
     }
 
@@ -44,16 +107,16 @@ final class DeskModel: ObservableObject {
             let old = s.articles[i].wordCount
             s.articles[i].body = new
             s.articles[i].updated = Date()
-            s.accountability.recordEdit(oldWordCount: old, newWordCount: s.articles[i].wordCount)
+            s.accountability.recordEdit(oldWordCount: old, newWordCount: s.articles[i].wordCount, device: workspace.deviceID)
         }
     }
 
     func updateTitle(_ new: String) {
         guard let i = currentIndex else { return }
-        mutate { $0.articles[i].title = new }
+        mutate { $0.articles[i].title = new; $0.articles[i].updated = Date() }
     }
 
-    func setGoal(_ goal: Int) { mutate { $0.accountability.dailyGoal = max(50, goal) } }
+    func setGoal(_ goal: Int) { mutate { $0.accountability.setGoal(max(50, goal)) } }
 
     func newArticle() {
         let a = Article()
@@ -62,7 +125,7 @@ final class DeskModel: ObservableObject {
     }
 
     func delete(_ id: UUID) {
-        mutate { $0.articles.removeAll { $0.id == id } }
+        mutate { $0.articles.removeAll { $0.id == id }; $0.tombstones[id.uuidString] = Date() }
         if selection == id { selection = state.articles.first?.id }
     }
 
@@ -82,7 +145,7 @@ final class DeskModel: ObservableObject {
 
     func toggleIdea(_ id: UUID) {
         guard let i = state.ideas.firstIndex(where: { $0.id == id }) else { return }
-        mutate { $0.ideas[i].done.toggle() }
+        mutate { $0.ideas[i].done.toggle(); $0.ideas[i].updated = Date() }
     }
 }
 
@@ -132,7 +195,7 @@ struct ContentView: View {
                 if let i = model.currentIndex {
                     EditorView(article: model.state.articles[i]).id(model.state.articles[i].id)
                 } else {
-                    Text("No article selected").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Text(model.state.articles.isEmpty ? "No articles yet — press ⌘N to start one" : "No article selected").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if model.showIdeas { Divider(); IdeasPanel().frame(width: 260) }
             }
@@ -142,9 +205,13 @@ struct ContentView: View {
                     Button { model.showCovers = true } label: { Label("Covers", systemImage: "photo.on.rectangle.angled") }
                         .disabled(model.currentIndex == nil).help("Generate cover options from this article")
                     Toggle(isOn: $model.showIdeas) { Label("Ideas", systemImage: "lightbulb") }.help("Show Elon's ideas")
+                    Button { model.showSync = true } label: {
+                        Label("Sync", systemImage: model.syncStatus.hasPrefix("Sync failed") ? "exclamationmark.icloud" : "arrow.triangle.2.circlepath")
+                    }.help(model.syncStatus)
                 }
             }
         }
+        .sheet(isPresented: $model.showSync) { SyncSheet() }
         .sheet(isPresented: $model.showCovers) {
             if let i = model.currentIndex { CoversSheet(article: model.state.articles[i]) }
         }
@@ -167,7 +234,7 @@ struct EditorView: View {
             HStack {
                 Text("\(article.wordCount) words").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Text(model.status).font(.caption).foregroundStyle(.secondary)
+                Text([model.status, model.syncStatus].filter { !$0.isEmpty }.joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }.padding(.horizontal, 40).padding(.vertical, 8)
         }
         .background(Color(nsColor: .textBackgroundColor))
@@ -300,5 +367,27 @@ struct LoadErrorBanner: View {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([folder.appendingPathComponent("state.json")]) }
         }
         .padding(12).background(Color.red.opacity(0.85))
+    }
+}
+
+struct SyncSheet: View {
+    @EnvironmentObject var model: DeskModel
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Sync").font(.title2.bold())
+            Text("Syncs articles, ideas, goal and word history with your Writing Desk server (for example your Mac mini over Tailscale). Nothing goes anywhere else.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            TextField("http://your-mac-mini:8765", text: $model.syncURLDraft).textFieldStyle(.roundedBorder)
+            Text(model.syncStatus).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            HStack {
+                if model.syncEnabled { Button("Turn off") { model.saveSyncSettings(enabled: false) } }
+                Spacer()
+                Button("Sync now") { model.syncNow() }.disabled(!model.syncEnabled)
+                Button(model.syncEnabled ? "Save" : "Turn on") { model.saveSyncSettings(enabled: true) }.disabled(!model.isWritable)
+                Button("Done") { dismiss() }.keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20).frame(width: 480)
     }
 }

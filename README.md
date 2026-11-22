@@ -1,6 +1,6 @@
 # Writing Desk
 
-A small, local-only macOS writing editor for Victor (native SwiftUI, built with Command Line Tools only — no Xcode, no server, no network).
+A small macOS writing editor for Victor (native SwiftUI, built with Command Line Tools only, no Xcode). Everything stays on your own Macs. The optional sync goes only to your own server over Tailscale.
 
 - **Editor**: minimal title + body, autosaved on every keystroke. Victor writes all article text; the app never generates or suggests article text.
 - **Accountability**: a daily word goal (default 500, adjust in steps of 50), today's progress bar, a 14-day history chart, and a streak counter. Only *new* words count, so deleting text never lowers a day's total.
@@ -20,12 +20,44 @@ cd writing-desk
 open /Applications/WritingDesk.app
 ```
 
-Your writing stays on each Mac (`~/Library/Application Support/WritingDesk/`) and isn't synced or uploaded.
+Each Mac keeps its own copy in `~/Library/Application Support/WritingDesk/`. To share it between Macs, turn on [sync](#sync-between-macs-over-tailscale).
+
+## Sync between Macs (over Tailscale)
+
+One Mac (the Mac mini) runs a tiny sync server that stores everything in a single SQLite file. Other Macs sync with it over your tailnet. There are no accounts and no third-party services, and nothing goes over the public internet.
+
+**On the server Mac (once):**
+
+```sh
+./scripts/install-server.sh      # build, install as a LaunchAgent, expose on the tailnet
+./scripts/uninstall-server.sh    # stop it (data is kept)
+```
+
+The server listens only on `127.0.0.1:8766`. `tailscale serve` publishes it to your tailnet as `http://<mac-name>:8765`. Tailscale accepts the connection, so the macOS firewall needs no exception and your LAN can't reach the server. Re-run the install script after pulling changes.
+
+**On every Mac (including the server Mac):** click the **Sync** toolbar button, enter `http://<mac-name>:8765`, and click **Turn on**. The app syncs at launch, every 30 seconds, and a few seconds after you stop typing. The status line shows the last sync or any error.
+
+**What syncs:** articles, Elon's ideas (including done ticks), the daily goal, and the word history.
+- **Word counts:** tracked per Mac, so writing on two Macs on the same day adds up instead of double counting.
+- **Deleting:** removing an article deletes it everywhere. If another Mac edited it after its last sync, though, that writing is kept.
+- **Conflicts:** if the same article was edited on two Macs between syncs, nothing is lost. The newer edit stays as the article, and the other version appears next to it as **"<title> (conflict copy)"**.
+- **Ideas inbox:** the inbox folder is per Mac. Ideas dropped on the Mac mini reach the other Macs through sync.
+
+**Server files** (`~/Library/Application Support/WritingDeskServer/`):
+
+| Path | What |
+|---|---|
+| `writing-desk.sqlite` | the database: table `docs(kind, id, json)`. Inspect it with `sqlite3 writing-desk.sqlite "select kind, id from docs"` |
+| `backups/yyyy-MM-dd.sqlite` | a snapshot taken before each day's first change (the newest 14 are kept) |
+| `server.log` | server log |
+| `~/Library/LaunchAgents/local.writingdesk.server.plist` | starts the server at login and restarts it if it stops |
+
+The app uses plain HTTP to reach the server. The traffic is encrypted by Tailscale (WireGuard), and the app bundle allows non-HTTPS connections for this.
 
 ## Build & run
 
 ```sh
-make test   # build + run the 14 core checks (covers 5:2 + content dependence, persistence, accountability, ideas, load/import failure safety)
+make test   # build + run the 22 checks (covers, persistence, accountability, ideas, failure safety, sync incl. a real two-Mac server run)
 make run    # build build/WritingDesk.app and open it
 make app    # just build the .app
 ```
@@ -42,6 +74,9 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 | `inbox/` | **Elon's ideas inbox**: drop `.txt` / `.md` files here |
 | `inbox/imported/` | inbox files that have already been processed |
 | `covers/` | default PNG export folder |
+| `device-id` | random id for this Mac (keeps per-Mac word counts apart) |
+| `sync.json` | sync server URL and on/off switch |
+| `sync-state.json` | which server versions this Mac last saw (used to detect conflicting edits) |
 
 ### Inbox format
 
@@ -55,10 +90,10 @@ One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines s
 
 ## If saved data can't be loaded
 
-If `state.json` exists but can't be read (for example, it's corrupted or was edited by hand), Writing Desk opens **read-only**: a red banner shows the error, editing is disabled, and nothing is written. The startup inbox import is skipped too. The file is left exactly as it was. To recover, fix `state.json` or move it aside (use **Show in Finder** on the banner), then relaunch. If there's no `state.json` at all, that's treated as a normal first launch.
+If `state.json` exists but can't be read (for example, it's corrupted or was edited by hand), Writing Desk opens **read-only**: a red banner shows the error, editing is disabled, and nothing is written. The startup inbox import and sync are paused too. The file is left exactly as it was. To recover, fix `state.json` or move it aside (use **Show in Finder** on the banner), then relaunch. If there's no `state.json` at all, that's treated as a normal first launch.
 
 ## Notes
 
-- Nothing is sent over the network. Covers are drawn with CoreGraphics and contain no text.
+- Nothing is sent over the network except to the sync server you configure. Covers are drawn with CoreGraphics and contain no text.
 - Tests are a plain executable (`WritingDeskChecks`) because the Swift Testing/XCTest macro plugins aren't available with Command Line Tools alone. For the same reason the UI avoids the `@State` macro and keeps view state in the `ObservableObject` model instead.
 - `COVER_SAMPLES_DIR=/tmp/x make test` also writes sample covers for visual review.
