@@ -54,7 +54,10 @@ export class Field {
         // ease toward the target, accelerating
         const k = Math.min(1, (p.age - p.homeAt) / p.homeDur);
         const e = k * k * (3 - 2 * k);
-        if (!p.from) p.from = { x: p.x, y: p.y };
+        if (!p.from) {
+          p.from = { x: p.x, y: p.y };
+          if (typeof p.target === 'function') p.target = p.target(); // resolve where home is *now*
+        }
         const cx = (p.from.x + p.target.x) / 2 + p.curve, cy = Math.min(p.from.y, p.target.y) - 80;
         const u = 1 - e;
         p.x = u * u * p.from.x + 2 * u * e * cx + e * e * p.target.x;

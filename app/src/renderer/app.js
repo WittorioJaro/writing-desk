@@ -214,11 +214,14 @@ function celebrate(st) {
   const c = $('#celebrate');
   c.classList.remove('go'); void c.offsetWidth; c.classList.add('go');
   el.body.classList.add('celebrating');
-  setTimeout(() => el.body.classList.remove('celebrating'), 3700);
+  // The page starts returning as the stage leaves (see the timeline in styles.css).
+  setTimeout(() => { el.body.classList.add('returning'); el.body.classList.remove('celebrating'); }, 3000);
+  setTimeout(() => { el.body.classList.remove('returning'); c.classList.remove('go'); }, 4400);
   // bring the chip back so the embers have somewhere to land
   setTimeout(() => el.body.classList.remove('writing'), 1300);
-  const target = center(el.chipEmber);
-  field.celebrate({ x: innerWidth / 2, y: innerHeight * 0.48, radius: 150, count: milestone ? 320 : 220, target, gold: !!milestone });
+  const target = () => center(el.chipEmber);
+  // Embers burst from the drawn ring itself (radius 194 px) and partly fly home to the streak chip.
+  field.celebrate({ x: innerWidth / 2, y: innerHeight * 0.48, radius: 194, count: milestone ? 320 : 220, target, gold: !!milestone });
 }
 field.onArrive = () => {
   el.chipEmber.classList.remove('bump'); void el.chipEmber.offsetWidth; el.chipEmber.classList.add('bump');
@@ -228,7 +231,12 @@ function renderMomentum(intro) {
   const a = acc();
   const today = A.wordsOn(a), goal = a.dailyGoal, st = A.streak(a), met = goal > 0 && today >= goal;
   const t = A.totals(a);
-  if (intro) odometer($('#hero-streak'), st, 0); else if ($('#hero-streak').dataset.v !== String(st)) odometer($('#hero-streak'), st);
+  if (intro) {
+    // show 0 while the sheet fades in, then roll up to the streak
+    odometer($('#hero-streak'), 0);
+    clearTimeout(renderMomentum.roll);
+    renderMomentum.roll = setTimeout(() => odometer($('#hero-streak'), st, 0), 260);
+  } else if ($('#hero-streak').dataset.v !== String(st)) odometer($('#hero-streak'), st);
   $('#hero-streak').dataset.v = st;
   $('#hero-label').textContent = st === 1 ? 'day streak' : 'day streak';
   flame.set(st, met);
@@ -364,7 +372,12 @@ function ideaLi(i, fresh) {
   chk.addEventListener('click', () => {
     li.classList.toggle('done');
     if (!i.done) field.puff({ ...center(chk), count: 18, spread: 60 });
-    setTimeout(async () => { await op('toggleIdea', i.id); renderIdeas(); }, 650);
+    // Let the check draw, then fold the row away before the list re-renders (no jump).
+    setTimeout(() => {
+      li.animate([{ height: `${li.offsetHeight}px`, opacity: 1 }, { height: '0px', opacity: 0, paddingTop: '0px', paddingBottom: '0px' }],
+        { duration: 340, easing: 'cubic-bezier(.32,.72,0,1)', fill: 'forwards' });
+    }, 420);
+    setTimeout(async () => { await op('toggleIdea', i.id); renderIdeas(); }, 780);
   });
   const body = document.createElement('div');
   const text = document.createElement('div'); text.className = 'i-text'; text.textContent = i.text;
@@ -439,12 +452,20 @@ function renderCovers(animate) {
       requestAnimationFrame(() => card.classList.add('in'));
     });
   } else {
+    // Crossfade: the new cover blurs in on top of the old one, then the old one is dropped.
     [...grid.children].forEach((card, i) => {
-      card.classList.add('swap');
       setTimeout(() => {
-        card.querySelector('canvas').replaceWith(renderCover(seed, i, coverVariant, 1200));
-        requestAnimationFrame(() => card.classList.remove('swap'));
-      }, 260 + i * 40);
+        card.querySelectorAll('canvas.incoming').forEach((c) => c.remove());
+        const next = renderCover(seed, i, coverVariant, 1200);
+        next.className = 'incoming';
+        card.querySelector('canvas').after(next);
+        requestAnimationFrame(() => requestAnimationFrame(() => next.classList.add('shown')));
+        setTimeout(() => {
+          if (!next.isConnected) return;
+          [...card.querySelectorAll('canvas')].filter((c) => c !== next).forEach((c) => c.remove());
+          next.className = '';
+        }, 700);
+      }, i * 50);
     });
   }
 }
@@ -530,9 +551,13 @@ function openOverlay(id) {
   }
 }
 function closeOverlays() {
+  const momentumWasOpen = $('#overlay-momentum').classList.contains('open');
   document.querySelectorAll('.overlay.open').forEach((o) => o.classList.remove('open'));
   $('#lightbox').classList.remove('open');
-  flame.stop();
+  if (momentumWasOpen) {
+    // keep the flame alive while the sheet fades, then stop it and the heat-map shimmer
+    setTimeout(() => { if (!$('#overlay-momentum').classList.contains('open')) { flame.stop(); $('#heat').classList.remove('in'); } }, 500);
+  }
 }
 function closeAll() { closeDrawers(); closeOverlays(); }
 const anyOpen = () => document.querySelector('.overlay.open, .drawer.open, #lightbox.open');
@@ -611,6 +636,9 @@ desk.onInbox((r) => {
   }
   if (r.errors?.length) toast(`Inbox: ${r.errors[0]}`, 'error');
 });
+
+addEventListener('blur', () => el.body.classList.add('blurred'));
+addEventListener('focus', () => el.body.classList.remove('blurred'));
 
 // Day rollover and relative times.
 setInterval(() => { if (snap) updateMomentum(); }, 60000);

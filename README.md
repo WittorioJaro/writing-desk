@@ -41,13 +41,15 @@ The server listens only on `127.0.0.1:8766`. `tailscale serve` publishes it to y
 - **Conflicts:** if the same article was edited on two Macs between syncs, nothing is lost. The newer edit stays as the article, and the other version appears next to it as **"<title> (conflict copy)"**.
 - **Ideas inbox:** the inbox folder is per Mac. Ideas dropped on the Mac mini reach the other Macs through sync.
 
+**Footprint:** one ~600 KB native binary. Idle it uses ~10 MB of memory and no CPU (no timers; it only wakes for a request). A sync of ~700 KB of writing costs ~14 ms of CPU, so two Macs syncing every 30 s use about a minute of CPU a day. Only syncs that change something are written to the database and the log.
+
 **Server files** (`~/Library/Application Support/WritingDeskServer/`):
 
 | Path | What |
 |---|---|
 | `writing-desk.sqlite` | the database: table `docs(kind, id, json)`. Inspect it with `sqlite3 writing-desk.sqlite "select kind, id from docs"` |
 | `backups/yyyy-MM-dd.sqlite` | a snapshot taken before each day's first change (the newest 14 are kept) |
-| `server.log` | server log |
+| `server.log` | server log: only syncs that changed something, and errors |
 | `~/Library/LaunchAgents/local.writingdesk.server.plist` | starts the server at login and restarts it if it stops |
 
 The app uses plain HTTP to reach the server; the traffic is encrypted by Tailscale (WireGuard). Only the app's background process talks to the server — the writing window itself has no network access at all.
@@ -97,3 +99,5 @@ If `state.json` exists but can't be read (for example, it's corrupted or was edi
 - The app never writes or suggests article text. Elon's prompts live in their own panel and never touch your writing.
 - Data format is unchanged from v1, so the Swift sync server and older copies keep working. Dates stay as Apple reference-date seconds and article fingerprints are exact 64-bit values, so this app and the server agree on what changed.
 - `npx electron test/shots.js /tmp/shots` (in `app/`) saves screenshots of every view from a seeded test workspace; `SHOT_THEME=light` for light mode.
+- `npx electron test/trace.js /tmp/trace [scenario…]` (in `app/`) traces every animation frame by frame under a controlled clock (timers, `requestAnimationFrame`, CSS animations and the canvas embers all step together) and saves one contact sheet per scenario, e.g. `celebration`, `momentum-open`, `covers-shuffle`.
+- Ambient motion (the streak ember, the unseen-prompts dot, the goal-line shine) plays a few times and then rests, and everything pauses when the window isn't focused, so the app idles at ~0% CPU.

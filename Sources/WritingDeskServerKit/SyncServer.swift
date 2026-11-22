@@ -141,8 +141,9 @@ public final class SyncServer {
                 if merged != stored {
                     if let backupDir { try? db.backupIfNeeded(into: backupDir) }   // snapshot before the day's first change
                     try db.save(merged)
+                    // Only syncs that changed something are logged, so an idle server's log doesn't grow every 30 s.
+                    log("sync: saved changes (\(merged.articles.count) articles, \(merged.ideas.count) ideas, \(conflicts) conflicts)")
                 }
-                log("sync: \(merged.articles.count) articles, \(merged.ideas.count) ideas, \(conflicts) conflicts")
                 return (200, try enc.encode(SyncResponse(state: merged, conflicts: conflicts)))
             } catch {
                 log("sync error: \(error)")
