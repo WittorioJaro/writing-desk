@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('desk', {
   selectCover: (id, choice) => ipcRenderer.invoke('desk:cover-select', id, choice),
   coverSettings: (s) => ipcRenderer.invoke('desk:cover-settings', s),
   suggestCovers: (id) => ipcRenderer.invoke('desk:cover-suggest', id),
+  coverImage: (file) => ipcRenderer.invoke('desk:cover-image', file),
   onCovers: on('desk:covers'),
   onState: on('desk:state'),
   onSync: on('desk:sync'),

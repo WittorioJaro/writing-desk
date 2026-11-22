@@ -1,5 +1,5 @@
 import { Field, Flame, odometer, tween } from './fx.js';
-import { seedFrom, renderCover, renderSVGCover, STYLES, EXPORT_W } from './covers.js';
+import { seedFrom, renderCover, STYLES, EXPORT_W } from './covers.js';
 import * as A from './acc.js';
 
 const $ = (s) => document.querySelector(s);
@@ -421,8 +421,8 @@ $('#btn-inbox').addEventListener('click', async () => {
 });
 
 // ---------- Covers ----------
-// A "choice" is either a generated cover {kind:'gen', style, variant, seed} (the seed is frozen when
-// chosen, so the cover doesn't drift as you keep writing) or a Codex design {kind:'codex', svg, name}.
+// A "choice" is either a drawn cover {kind:'gen', style, variant, seed} (the seed is frozen when chosen,
+// so it doesn't drift as you keep writing) or a Codex image {kind:'image', file, name}, stored in covers/.
 let coverVariant = 0;
 let coversState = { settings: { smart: true }, available: false, articles: {}, running: null };
 const coverEntry = (id = currentId) => (id && coversState.articles[id]) || {};
@@ -431,9 +431,27 @@ function coverSource() {
   return a && (a.title.trim() || a.body.trim()) ? a : null;
 }
 const genChoice = (a, style) => ({ kind: 'gen', style, variant: coverVariant, seed: seedFrom(a.title, a.body), name: STYLES[style] });
-const choiceKey = (c) => (c ? (c.kind === 'gen' ? `gen:${c.style}:${c.variant}:${c.seed.hash}` : `codex:${c.svg.length}:${c.name}`) : '');
+const choiceKey = (c) => (c ? (c.kind === 'gen' ? `gen:${c.style}:${c.variant}:${c.seed.hash}` : `img:${c.file}`) : '');
+const bitmaps = new Map();
+function loadBitmap(file) {
+  if (!bitmaps.has(file)) {
+    bitmaps.set(file, desk.coverImage(file).then((bytes) => createImageBitmap(new Blob([bytes], { type: 'image/png' }))));
+    if (bitmaps.size > 30) bitmaps.delete(bitmaps.keys().next().value);
+  }
+  return bitmaps.get(file);
+}
+/** Renders a choice onto a 5:2 canvas. Codex images are center-cropped to 5:2; width null = native size. */
 async function renderChoice(c, width) {
-  return c.kind === 'gen' ? renderCover(c.seed, c.style, c.variant, width) : renderSVGCover(c.svg, width);
+  if (c.kind === 'gen') return renderCover(c.seed, c.style, c.variant, width || EXPORT_W);
+  const bmp = await loadBitmap(c.file);
+  const sw = Math.min(bmp.width, bmp.height * 2.5), sh = sw / 2.5;
+  const w = Math.round(width || sw), h = Math.round(w / 2.5);
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bmp, (bmp.width - sw) / 2, (bmp.height - sh) / 2, sw, sh, 0, 0, w, h);
+  return canvas;
 }
 
 function coverCard(choice, i) {
@@ -472,39 +490,37 @@ function renderSmart() {
   $('#smart-toggle').checked = !!on;
   $('#smart-toggle').disabled = !coversState.available;
   $('#smart-note').textContent = coversState.available
-    ? 'Once a piece has a title and a few sentences, Codex designs three covers for it. Only the title and the opening are sent, through your own Codex sign-in.'
+    ? 'Once a piece has a title and a few sentences, Codex paints three cover images for it in the background. Only the title and the opening are sent, through your own Codex sign-in.'
     : 'Codex isn’t installed on this Mac (no codex command found), so only the covers drawn here are available.';
   sec.hidden = !on || !coversState.available || !a;
   if (sec.hidden) return;
   const sug = coverEntry(a.id).suggestions;
   const running = coversState.running === a.id || sug?.status === 'running';
+  const covers = sug?.covers || [];
   $('#btn-suggest').hidden = running;
-  $('#btn-suggest').textContent = sug?.covers?.length ? 'Suggest again' : 'Suggest now';
-  const key = running ? 'running' : sug?.status === 'ready' ? `ready:${sug.at}` : sug?.status === 'error' ? `error:${sug.at}` : 'none';
-  if (grid.dataset.key === key) { markChosen(); return; }
-  grid.dataset.key = key;
-  grid.innerHTML = '';
-  if (running) {
-    status.textContent = 'Codex is drawing covers for this piece… usually about a minute.';
-    for (let i = 0; i < 3; i++) { const sk = document.createElement('div'); sk.className = 'cover skeleton'; sk.style.setProperty('--i', i); grid.append(sk); requestAnimationFrame(() => sk.classList.add('in')); }
-    return;
-  }
-  if (sug?.covers?.length) {
-    status.textContent = sug.status === 'error' ? `Last try failed: ${sug.error}` : `Designed by Codex for “${sug.basis.title.trim()}”.`;
-    sug.covers.forEach((c, i) => {
-      const choice = { kind: 'codex', svg: c.svg, name: c.name, idea: c.idea };
-      const card = coverCard(choice, i);
-      card.title = c.idea;
-      grid.append(card);
-    });
-  } else if (sug?.status === 'error') {
-    status.textContent = `Codex couldn’t draw covers: ${sug.error}`;
-  } else {
+  $('#btn-suggest').textContent = covers.length ? 'Suggest again' : 'Suggest now';
+  if (running) status.textContent = covers.length ? `Codex is painting covers… ${covers.length} of ${covers.length + (sug.pending || 0)} ready.` : 'Codex is painting three covers for this piece… usually under a minute.';
+  else if (covers.length) status.textContent = `Painted by Codex for “${sug.basis.title.trim()}”.` + (sug.error && covers.length < 3 ? ` (${3 - covers.length} didn’t come through: ${sug.error})` : '');
+  else if (sug?.status === 'error') status.textContent = `Codex couldn’t paint covers: ${sug.error}`;
+  else {
     const words = A.wordCount(a.body);
     status.textContent = !a.title.trim() ? 'Give the piece a title and Codex will suggest covers.'
       : words < 60 ? `Codex will suggest covers after a few more sentences (${60 - words} more words).`
       : 'Codex will suggest covers when you pause writing.';
   }
+  // Reconcile the grid in place: keep cards that are already there, add new ones, fill the rest with placeholders.
+  const want = covers.map((c) => ({ key: choiceKey(c), c }));
+  const pending = running ? Math.max(0, sug?.pending ?? 3) : 0;
+  const existing = new Map([...grid.children].filter((n) => n.dataset.key).map((n) => [n.dataset.key, n]));
+  const nodes = want.map(({ key, c }, i) => existing.get(key) || Object.assign(coverCard({ ...c }, i), { title: c.idea || '' }));
+  const skeletons = [...grid.querySelectorAll('.skeleton')];
+  for (let i = 0; i < pending; i++) {
+    let sk = skeletons[i];
+    if (!sk) { sk = document.createElement('div'); sk.className = 'cover skeleton'; sk.style.setProperty('--i', nodes.length + i); requestAnimationFrame(() => sk.classList.add('in')); }
+    nodes.push(sk);
+  }
+  grid.replaceChildren(...nodes);
+  markChosen();
 }
 
 function renderCovers(animate) {
@@ -561,7 +577,7 @@ $('#smart-toggle').addEventListener('change', async (e) => {
 
 async function exportChoice(choice) {
   const a = coverSource();
-  const canvas = await renderChoice(choice, EXPORT_W);
+  const canvas = await renderChoice(choice, choice.kind === 'gen' ? EXPORT_W : null);
   const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const name = `${((a && a.title.trim()) || 'cover').slice(0, 40)} – ${choice.name || 'cover'}`;
@@ -639,7 +655,7 @@ async function showCoverNotice(id) {
   const thumbs = n.querySelector('.thumbs');
   thumbs.replaceChildren();
   for (const c of sug.covers.slice(0, 3)) {
-    const t = await renderSVGCover(c.svg, 240).catch(() => null);
+    const t = await renderChoice(c, 240).catch(() => null);
     if (t) thumbs.append(t);
   }
   n.querySelector('.what').textContent = `${sug.covers.length} covers for “${a.title.trim()}”`;

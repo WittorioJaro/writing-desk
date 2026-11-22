@@ -28,12 +28,19 @@ module.exports = function seed(home, { covers = true } = {}) {
     accountability: { dailyGoal: 500, byDevice: { 'SHOT-DEVICE': history } },
     tombstones: {},
   }));
-  // Real Codex suggestions for the first piece (test/fixtures/codex-covers.json), so traces show the real thing.
+  // Real Codex-painted covers for the first piece (test/fixtures/covers), so traces show the real thing.
   if (covers) {
-    const { covers: list } = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'codex-covers.json'), 'utf8'));
+    const id = 'A0000000-0000-4000-8000-000000000001';
+    const dir = path.join(home, 'covers', 'suggested', id);
+    fs.mkdirSync(dir, { recursive: true });
+    const names = ['Bold', 'Atmosphere', 'Object'];
+    const list = names.map((name, i) => {
+      fs.copyFileSync(path.join(__dirname, 'fixtures', 'covers', `${i + 1}.png`), path.join(dir, `seed-${i + 1}.png`));
+      return { kind: 'image', file: `suggested/${id}/seed-${i + 1}.png`, name };
+    });
     fs.writeFileSync(path.join(home, 'covers.json'), JSON.stringify({
-      settings: { smart: true, model: 'gpt-6-luna', effort: 'high' },
-      articles: { 'A0000000-0000-4000-8000-000000000001': { suggestions: { status: 'ready', at: Date.now(), basis: { title: 'The quiet discipline of small streaks', words: 85 }, covers: list } } },
+      settings: { smart: true, model: 'gpt-6-luna', effort: 'low' },
+      articles: { [id]: { suggestions: { status: 'ready', at: Date.now(), pending: 0, basis: { title: 'The quiet discipline of small streaks', words: 85 }, covers: list } } },
     }));
   }
 };

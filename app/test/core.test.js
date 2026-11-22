@@ -297,27 +297,77 @@ test('sync: wrong URL or unreachable server reports an error and changes nothing
 
 // ---- Smart covers ------------------------------------------------------------------------------
 const SC = require('../src/core/smartcovers');
+const FAKE = path.join(__dirname, 'fake-codex.js');
+const words = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
 
-test('covers: SVG from Codex is made text-free, script-free, self-contained and exactly 5:2', () => {
-  const dirty = '```svg\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" width="800" onload="x()"><defs><linearGradient id="g"/></defs>'
-    + '<rect width="10" height="10" fill="url(#g)" style="fill:url(https://evil/x)"/><text>Hello</text><tspan>x</tspan><script>alert(1)</script>'
-    + '<image href="https://evil/p.png"/><use href="#g"/><a href="https://x"><circle r="3"/></a><foreignObject><div>t</div></foreignObject></svg>\n```';
-  const s = SC.sanitizeSVG(dirty);
-  assert.ok(s);
-  assert.match(s, /viewBox="0 0 1500 600" width="1500" height="600"/);
-  for (const bad of [/<text/i, /<tspan/i, /<script/i, /<image/i, /onload/i, /https:/, /<foreignObject/i, /<a\b/]) assert.doesNotMatch(s, bad);
-  assert.match(s, /fill="url\(#g\)"/, 'same-document gradients survive');
-  assert.match(s, /<use href="#g"/);
-  assert.equal(SC.sanitizeSVG('not svg'), null);
-  assert.equal(SC.sanitizeSVG('<svg><text>only text</text></svg>'), null, 'nothing visual left');
-});
+function withCodexHome(fn) {
+  return async () => {
+    const prev = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = tmp();
+    try { await fn(process.env.CODEX_HOME); } finally { if (prev === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = prev; }
+  };
+}
 
-test('covers: suggestions start after a title and some words, wait for a pause, and only go out with title + opening', async () => {
+test('covers: one Codex image run is sandboxed, sends only title + opening, and returns a fresh PNG from Codex', withCodexHome(async () => {
+  const log = path.join(tmp(), 'log.jsonl');
+  process.env.FAKE_CODEX_LOG = log;
+  try {
+    const file = await SC.runCodexImage({ bin: FAKE, title: 'Rivers', excerpt: 'Water finds a way.', direction: SC.DIRECTIONS[0], model: 'gpt-6-luna', effort: 'low' });
+    assert.ok(file.startsWith(path.join(process.env.CODEX_HOME, 'generated_images')));
+    assert.equal(fs.readFileSync(file).subarray(1, 4).toString(), 'PNG');
+    const call = JSON.parse(fs.readFileSync(log, 'utf8').trim());
+    assert.ok(call.args.includes('--ephemeral') && call.args.includes('workspace-write'), 'empty temp workspace, nothing kept');
+    assert.match(call.prompt, /image_gen tool/);
+    assert.match(call.prompt, /exactly 5:2 \(2000x800/);
+    assert.match(call.prompt, /no text, letters/);
+    assert.match(call.prompt, /Article title: Rivers\nOpening of the article:\nWater finds a way\./);
+  } finally { delete process.env.FAKE_CODEX_LOG; }
+}));
+
+test('covers: anything other than a fresh PNG inside Codex’s own image folder is refused', withCodexHome(async () => {
+  const outside = path.join(tmp(), 'x.png');
+  fs.writeFileSync(outside, 'not really');
+  for (const reply of [outside, '/etc/passwd.png', 'NO_TOOL', 'I could not do that']) {
+    process.env.FAKE_CODEX_REPLY = reply;
+    try { await assert.rejects(SC.runCodexImage({ bin: FAKE, title: 'T', excerpt: 'e', direction: SC.DIRECTIONS[0] })); }
+    finally { delete process.env.FAKE_CODEX_REPLY; }
+  }
+  process.env.FAKE_CODEX_FAIL = '1';
+  try { await assert.rejects(SC.runCodexImage({ bin: FAKE, title: 'T', excerpt: 'e', direction: SC.DIRECTIONS[0] }), /pretend failure/); }
+  finally { delete process.env.FAKE_CODEX_FAIL; }
+}));
+
+test('covers: three images are painted in parallel, moved into the app, and show up one by one', withCodexHome(async (home) => {
   const dir = tmp();
+  const events = [];
+  const sc = new SC.SmartCovers(dir, { onChange: (id, status) => events.push(status) });
+  sc.bin = FAKE;
+  const a = { id: 'X', title: 'Rivers', body: words(120) };
+  const t0 = Date.now();
+  await sc.generate(a);
+  assert.ok(Date.now() - t0 < 3000, 'in parallel, not one after another');
+  const sug = sc.data.articles.X.suggestions;
+  assert.equal(sug.status, 'ready');
+  assert.deepEqual(sug.covers.map((c) => c.name), ['Bold', 'Atmosphere', 'Object']);
+  for (const c of sug.covers) assert.ok(fs.existsSync(sc.imagePath(c.file)), 'stored in the app’s covers folder');
+  assert.deepEqual(events, ['running', 'progress', 'progress', 'ready']);
+  assert.equal(fs.readdirSync(path.join(home, 'generated_images')).length, 0, 'moved out of Codex’s folder');
+  assert.throws(() => sc.imagePath('../state.json'));
+  // the next round replaces the images, but keeps a chosen one
+  sc.select('X', sug.covers[1]);
+  const chosen = sc.imagePath(sug.covers[1].file), dropped = sc.imagePath(sug.covers[0].file);
+  await sc.generate(a);
+  assert.ok(fs.existsSync(chosen));
+  assert.ok(!fs.existsSync(dropped));
+  // persists locally
+  const again = new SC.SmartCovers(dir);
+  assert.equal(again.data.articles.X.selected.name, 'Atmosphere');
+}));
+
+test('covers: suggestions start after a title and some words, wait for a pause, and come back as the piece grows', async () => {
   const calls = [];
-  const sc = new SC.SmartCovers(dir, { debounceMs: 30, run: async (o) => { calls.push(o); return [{ name: 'A', idea: 'i', svg: '<svg/>' }]; } });
+  const sc = new SC.SmartCovers(tmp(), { debounceMs: 30, run: async (o) => { calls.push(o); throw new Error('skip'); } });
   sc.bin = '/fake/codex';
-  const words = (n) => Array.from({ length: n }, (_, i) => `word${i}`).join(' ');
   const a = { id: 'X', title: '', body: words(100) };
   assert.equal(sc.wants(a), false, 'no title yet');
   a.title = 'Rivers';
@@ -325,12 +375,13 @@ test('covers: suggestions start after a title and some words, wait for a pause, 
   assert.equal(sc.wants(a), false, 'too few words');
   a.body = words(400);
   const get = () => a;
-  sc.consider(a, get); sc.consider(a, get); sc.consider(a, get); // typing: debounced to one run
-  await new Promise((r) => setTimeout(r, 120));
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].title, 'Rivers');
+  sc.consider(a, get); sc.consider(a, get); sc.consider(a, get); // typing: debounced to one round
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(calls.length, 3, 'one round = three images');
   assert.ok(calls[0].excerpt.split(/\s+/).length <= SC.EXCERPT_WORDS + 1, 'only the opening is sent');
-  assert.equal(sc.data.articles.X.suggestions.status, 'ready');
+  assert.equal(sc.data.articles.X.suggestions.status, 'error');
+  assert.equal(sc.wants(a), false, 'a failed round is not retried right away');
+  sc.data.articles.X.suggestions = { status: 'ready', basis: { title: 'Rivers', words: 400 }, covers: [], autoRuns: 1 };
   assert.equal(sc.wants(a), false, 'not again for small edits');
   a.body = words(400 + SC.REGEN_WORDS);
   assert.equal(sc.wants(a), true, 'again once the piece has grown');
@@ -338,32 +389,4 @@ test('covers: suggestions start after a title and some words, wait for a pause, 
   assert.equal(sc.wants(a), true, 'again when the title changes');
   sc.setSettings({ smart: false });
   assert.equal(sc.wants(a), false, 'never when switched off');
-  // choice + suggestions persist locally
-  sc.select('X', { kind: 'codex', svg: '<svg/>', name: 'A' });
-  const again = new SC.SmartCovers(dir);
-  assert.equal(again.data.articles.X.selected.name, 'A');
-  assert.equal(again.data.settings.smart, false);
-});
-
-test('covers: a failing Codex run is reported, not thrown, and is retried later', async () => {
-  const sc = new SC.SmartCovers(tmp(), { run: async () => { throw new Error('model not available'); } });
-  sc.bin = '/fake/codex';
-  const a = { id: 'Y', title: 'T', body: Array(80).fill('w').join(' ') };
-  await sc.generate(a);
-  assert.equal(sc.data.articles.Y.suggestions.status, 'error');
-  assert.match(sc.data.articles.Y.suggestions.error, /model not available/);
-  assert.equal(sc.wants(a), false, 'no immediate retry loop');
-});
-
-test('covers: the real Codex runner works against a stand-in CLI and sanitizes its output', async () => {
-  const log = path.join(tmp(), 'log.jsonl');
-  process.env.FAKE_CODEX_LOG = log;
-  try {
-    const covers = await SC.runCodex({ bin: path.join(__dirname, 'fake-codex.js'), title: 'Rivers', excerpt: 'Water finds a way.', model: 'gpt-6-luna', effort: 'high' });
-    assert.equal(covers.length, 3);
-    for (const c of covers) { assert.doesNotMatch(c.svg, /<text|<script/); assert.match(c.svg, /viewBox="0 0 1500 600"/); }
-    const call = JSON.parse(fs.readFileSync(log, 'utf8').trim());
-    assert.ok(call.args.includes('read-only') && call.args.includes('--ephemeral'), 'sandboxed, nothing kept');
-    assert.match(call.prompt, /Article title: Rivers\nOpening of the article:\nWater finds a way\./);
-  } finally { delete process.env.FAKE_CODEX_LOG; }
 });

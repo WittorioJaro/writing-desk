@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-e2e-'));
 process.env.WRITING_DESK_HOME = home;
 process.env.WD_E2E = '1';
+process.env.CODEX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-codex-home-')); // fake Codex writes images here, never ~/.codex
 // Smart covers run against a stand-in Codex that records what it was sent.
 process.env.WD_CODEX_BIN = path.join(__dirname, 'fake-codex.js');
 process.env.WD_COVER_DEBOUNCE = '400';
@@ -75,12 +76,12 @@ whenReady.then(async ({ win, ws }) => {
     assert.ok(calls.length >= 1);
     const last = calls[calls.length - 1];
     assert.match(last.prompt, /Article title: Rivers and patience\nOpening of the article:\nWater finds a way/);
-    assert.ok(last.args.includes('read-only'));
+    assert.equal(calls.length, 3, 'three images, painted in parallel');
     const id = ws.state.articles[0].id;
     const sug = JSON.parse(fs.readFileSync(path.join(home, 'covers.json'), 'utf8')).articles[id].suggestions;
     assert.equal(sug.status, 'ready');
     assert.equal(sug.covers.length, 3);
-    assert.ok(sug.covers.every((c) => !/<text|<script/.test(c.svg)), 'sanitized');
+    for (const c of sug.covers) assert.ok(fs.existsSync(path.join(home, 'covers', c.file)), 'image stored in the app');
   });
 
   await check('smart covers: a soft notice slides in from the top and opens the suggestions', async () => {
@@ -107,7 +108,7 @@ whenReady.then(async ({ win, ws }) => {
     assert.equal(r[0] * 2, r[1] * 5, 'exactly 5:2');
     assert.equal(r[2], 250);
     const saved = JSON.parse(fs.readFileSync(path.join(home, 'covers.json'), 'utf8')).articles[id].selected;
-    assert.equal(saved.kind, 'codex');
+    assert.equal(saved.kind, 'image');
     // a drawn cover can be chosen too, and its look is frozen even as the text changes
     await js(`window.__desk.useCover(window.__desk.genChoice(window.__desk.snap.state.articles.find(a => a.id === '${id}'), 2))`);
     await wait(900);

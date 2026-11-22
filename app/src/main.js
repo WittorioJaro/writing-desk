@@ -123,6 +123,7 @@ function registerIPC() {
   ipcMain.handle('desk:inbox', () => importInbox(true));
   // Covers: chosen cover per piece, and Codex suggestions (local only, see core/smartcovers.js)
   ipcMain.handle('desk:cover-select', (_e, id, choice) => { smart.select(id, choice); return smart.snapshot(); });
+  ipcMain.handle('desk:cover-image', (_e, rel) => fs.readFileSync(smart.imagePath(rel)));
   ipcMain.handle('desk:cover-settings', (_e, s) => { smart.setSettings(s); return smart.snapshot(); });
   ipcMain.handle('desk:cover-suggest', async (_e, id) => {
     const a = ws.article(id);

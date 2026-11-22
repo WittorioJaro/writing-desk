@@ -317,23 +317,3 @@ export function renderCover(seed, style, variant, width) {
   return c;
 }
 
-const svgCache = new Map();
-/** Renders a (sanitized) SVG cover onto a 5:2 canvas, with the same film grain as the drawn covers. */
-export async function renderSVGCover(svg, width) {
-  let img = svgCache.get(svg);
-  if (!img) {
-    img = new Image();
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-    await img.decode();
-    svgCache.set(svg, img);
-    if (svgCache.size > 40) svgCache.delete(svgCache.keys().next().value);
-  }
-  const height = Math.round((width * 2) / 5);
-  const c = document.createElement('canvas');
-  c.width = width;
-  c.height = height;
-  const ctx = c.getContext('2d');
-  ctx.drawImage(img, 0, 0, width, height);
-  grain(ctx, width, height, 0.1);
-  return c;
-}

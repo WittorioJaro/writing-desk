@@ -10,6 +10,7 @@ fs.mkdirSync(out, { recursive: true });
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-shots-home-'));
 process.env.WRITING_DESK_HOME = home;
 process.env.WD_E2E = '1';
+process.env.CODEX_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'wd-codex-home-')); // fake Codex writes images here, never ~/.codex
 process.env.WD_CODEX_BIN = path.join(__dirname, 'fake-codex.js'); // never call the real Codex from tests
 
 require('./seed')(home);
