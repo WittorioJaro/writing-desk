@@ -112,7 +112,7 @@ test('ideas: inbox parsing strips bullets, skips headings and duplicates, archiv
   const dir = tmp();
   const w = ws(dir);
   w.addIdea('one');
-  fs.writeFileSync(path.join(dir, 'inbox', 'a.md'), '# Elon\n- One\n- Think about covers\n');
+  fs.writeFileSync(path.join(dir, 'inbox', 'a.md'), '# Ideas\n- One\n- Think about covers\n');
   fs.writeFileSync(path.join(dir, 'inbox', 'b.txt'), 'think about covers\nNew thing');
   fs.writeFileSync(path.join(dir, 'inbox', 'ignore.pdf'), 'x');
   const r = w.importInbox();
@@ -206,12 +206,12 @@ test('sync: two Macs through the real Swift server (edits, conflicts, deletes, i
     const id = a.newArticle();
     a.setTitle(id, 'Shared');
     a.setBody(id, 'Written on the MacBook.');
-    a.addIdea('From Elon');
+    a.addIdea('From the inbox');
     a.setGoal(300);
     await a.syncOnce();
     await b.syncOnce();
     assert.equal(b.article(id).body, 'Written on the MacBook.');
-    assert.equal(b.state.ideas[0].text, 'From Elon');
+    assert.equal(b.state.ideas[0].text, 'From the inbox');
     assert.equal(b.state.accountability.dailyGoal, 300);
 
     // Sequential edits on both sides: no false conflicts.
@@ -273,7 +273,7 @@ test('sync: reads data written by the Swift app and keeps it byte-compatible for
     fs.writeFileSync(path.join(dir, 'state.json'), JSON.stringify({
       accountability: { byDevice: { 'MINI-1': { '2026-11-20': 512 } }, dailyGoal: 500 },
       articles: [{ body: 'Swift wrote this', created: 785500000.1234567, id: '11111111-2222-4333-8444-555555555555', title: 'From Swift', updated: 785500001.7654321 }],
-      ideas: [{ added: 785400000.5, done: false, id: '99999999-2222-4333-8444-555555555555', source: 'elon.md', text: 'Swift idea' }],
+      ideas: [{ added: 785400000.5, done: false, id: '99999999-2222-4333-8444-555555555555', source: 'ideas.md', text: 'Swift idea' }],
       tombstones: {},
     }));
     const w = ws(dir);

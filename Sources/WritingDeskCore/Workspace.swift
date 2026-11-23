@@ -86,7 +86,7 @@ public final class Workspace {
         try store.save(state)
     }
 
-    /// Imports Elon's inbox, saving before any file is archived. Blocked when read-only.
+    /// Imports the ideas inbox, saving before any file is archived. Blocked when read-only.
     public func importInbox(now: Date = Date()) throws -> IdeasInbox.ImportResult {
         guard isWritable else { throw WorkspaceError.readOnly(loadError ?? "") }
         return IdeasInbox.importInbox(store: store, into: &state, now: now, persist: store.save)

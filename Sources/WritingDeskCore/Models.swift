@@ -1,6 +1,6 @@
 import Foundation
 
-/// An article written by Victor. Article text is only ever typed by the user.
+/// An article written by the user. Article text is only ever typed by the user.
 public struct Article: Codable, Identifiable, Equatable {
     public var id: UUID
     public var title: String
@@ -19,7 +19,7 @@ public struct Article: Codable, Identifiable, Equatable {
     public var wordCount: Int { WordCounter.count(body) }
 }
 
-/// A prompt / idea / thing to think about supplied by Elon. Kept separate from articles.
+/// A prompt / idea / thing to think about from the ideas inbox. Kept separate from articles.
 public struct Idea: Codable, Identifiable, Equatable {
     public var id: UUID
     public var text: String

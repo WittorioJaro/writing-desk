@@ -1,4 +1,4 @@
-// Copying out of the editor. Victor leaves a blank line between paragraphs while writing, but rich
+// Copying out of the editor. Writers often leave a blank line between paragraphs while writing, but rich
 // editors (like X's article editor) already space their paragraphs, so a blank line pasted there
 // becomes an extra empty paragraph. When a copied selection spans paragraphs, the clipboard gets
 // one paragraph per <p> (HTML) and one paragraph per line (plain text), with no empty lines.

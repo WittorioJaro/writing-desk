@@ -1,5 +1,5 @@
 'use strict';
-// Seeds a demo workspace (a 6-day streak, three pieces, Elon's prompts) for screenshots and traces.
+// Seeds a demo workspace (a 6-day streak, three pieces, inbox prompts) for screenshots and traces.
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -21,8 +21,8 @@ module.exports = function seed(home, { covers = true } = {}) {
       { id: 'A0000000-0000-4000-8000-000000000003', title: '', created: ref(t - 864e5 * 9), updated: ref(t - 864e5 * 8), body: 'Half an idea about cities and walking.' },
     ],
     ideas: [
-      { id: 'B0000000-0000-4000-8000-000000000001', text: 'Why do streaks fail after week two?', source: 'elon-2026-11-21.md', added: ref(t - 864e5), done: false },
-      { id: 'B0000000-0000-4000-8000-000000000002', text: 'Think about what “minimal” means for a cover', source: 'elon-2026-11-21.md', added: ref(t - 864e5), done: false },
+      { id: 'B0000000-0000-4000-8000-000000000001', text: 'Why do streaks fail after week two?', source: 'ideas-2026-11-21.md', added: ref(t - 864e5), done: false },
+      { id: 'B0000000-0000-4000-8000-000000000002', text: 'Think about what “minimal” means for a cover', source: 'ideas-2026-11-21.md', added: ref(t - 864e5), done: false },
       { id: 'B0000000-0000-4000-8000-000000000003', text: 'Write about the cost of context switching', source: 'added in app', added: ref(t - 864e5 * 4), done: true, updated: ref(t - 864e5 * 2) },
     ],
     accountability: { dailyGoal: 500, byDevice: { 'SHOT-DEVICE': history } },

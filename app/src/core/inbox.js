@@ -1,5 +1,5 @@
 'use strict';
-// Elon's ideas inbox: plain .txt / .md files dropped into `inbox/`, one idea per line.
+// Ideas inbox: plain .txt / .md files dropped into `inbox/`, one idea per line.
 // Leading bullets (-, *, •, 1.) are stripped; lines starting with # are ignored; case-insensitive
 // duplicates are skipped. A file is moved to `inbox/imported/` only *after* its ideas were saved.
 

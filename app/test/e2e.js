@@ -147,10 +147,10 @@ whenReady.then(async ({ win, ws }) => {
   });
 
   await check('ideas: a file dropped in the inbox appears on its own, separate from articles', async () => {
-    fs.writeFileSync(path.join(home, 'inbox', 'elon.md'), '# Ideas\n- Why do rivers bend?\n- Think about patience as a skill\n');
+    fs.writeFileSync(path.join(home, 'inbox', 'ideas.md'), '# Ideas\n- Why do rivers bend?\n- Think about patience as a skill\n');
     await wait(1800);
     assert.deepEqual(ws.state.ideas.map((i) => i.text), ['Why do rivers bend?', 'Think about patience as a skill']);
-    assert.ok(fs.existsSync(path.join(home, 'inbox', 'imported', 'elon.md')));
+    assert.ok(fs.existsSync(path.join(home, 'inbox', 'imported', 'ideas.md')));
     assert.equal(await js(`document.querySelector('#prompts-badge').hidden`), false, 'unseen badge');
     assert.equal(ws.state.articles.length, 1);
     assert.ok(!ws.state.articles[0].body.includes('rivers bend'));

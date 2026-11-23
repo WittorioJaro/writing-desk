@@ -1,6 +1,6 @@
 import Foundation
 
-/// Imports Elon's ideas from plain files dropped into the inbox folder.
+/// Imports ideas from plain files dropped into the inbox folder.
 ///
 /// Format: any `.txt` or `.md` file; one idea per non-empty line.
 /// Leading bullets (`-`, `*`, `•`, `1.`) are stripped; lines starting with `#` are ignored.

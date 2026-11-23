@@ -2,7 +2,8 @@
   "name": "writing-desk",
   "productName": "Writing Desk",
   "version": "2.0.0",
-  "description": "A quiet, local writing desk with a daily goal, streaks, Elon's prompts and offline 5:2 covers.",
+  "description": "A quiet, local writing desk with a daily goal, streaks, a prompts panel and offline 5:2 covers.",
+  "license": "MIT",
   "main": "src/main.js",
   "private": true,
   "scripts": {

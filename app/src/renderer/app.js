@@ -410,7 +410,7 @@ function renderIdeas() {
   el.badge.hidden = unseen.length === 0;
   if (!el.drawerP.classList.contains('open')) return;
   el.ideas.innerHTML = '';
-  if (!open.length) el.ideas.innerHTML = '<li class="empty">No open prompts. When Elon drops a file in the inbox, it lands here.</li>';
+  if (!open.length) el.ideas.innerHTML = '<li class="empty">No open prompts. Drop a .txt or .md file in the inbox and it lands here.</li>';
   open.forEach((i) => el.ideas.append(ideaLi(i, !seen.has(i.id))));
   el.ideasDone.innerHTML = '';
   done.forEach((i) => el.ideasDone.append(ideaLi(i, false)));
@@ -829,7 +829,7 @@ desk.onSync((s) => renderSync(s));
 desk.onToast((t) => toast(t.text, t.kind));
 desk.onInbox((r) => {
   if (r.added) {
-    toast(`${plural(r.added, 'new prompt')} from Elon`);
+    toast(`${plural(r.added, 'new prompt')}`);
     field.puff({ ...center($('#btn-prompts')), count: 30 });
     renderIdeas();
   }

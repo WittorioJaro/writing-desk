@@ -100,20 +100,20 @@ struct PersistenceAndIdeasTests {
     func stateRoundTrips() throws {
         let store = try tempStore()
         var s = AppState()
-        s.articles.append(Article(title: "Draft", body: "Victor's words."))
+        s.articles.append(Article(title: "Draft", body: "My words."))
         s.ideas.append(Idea(text: "Think about incentives", source: "manual"))
         s.accountability.dailyGoal = 750
         s.accountability.byDevice["mac-a"] = ["2026-11-21": 321]
         try store.save(s)
         let loaded = try Store(root: store.root).load()
-        expect(loaded.articles.map(\.body) == ["Victor's words."])
+        expect(loaded.articles.map(\.body) == ["My words."])
         expect(loaded.ideas.map(\.text) == ["Think about incentives"])
         expect(loaded.accountability == s.accountability)
         expect(try tempStore().load() == AppState())
     }
 
     func parsesInboxFormat() {
-        let text = "# Ideas from Elon\n- Why do habits fail?\n* First principles of editing\n\n1. Write about launch costs\nPlain line idea\n   \n"
+        let text = "# Ideas\n- Why do habits fail?\n* First principles of editing\n\n1. Write about launch costs\nPlain line idea\n   \n"
         expect(IdeasInbox.parse(text) == ["Why do habits fail?", "First principles of editing", "Write about launch costs", "Plain line idea"])
     }
 
@@ -136,9 +136,9 @@ struct PersistenceAndIdeasTests {
 
     func loadFailureIsReadOnlyAndPreservesFile() throws {
         let store = try tempStore()
-        let corrupt = Data("{ \"articles\": [ {\"title\": \"Victor's draft\"".utf8)  // truncated JSON
+        let corrupt = Data("{ \"articles\": [ {\"title\": \"My draft\"".utf8)  // truncated JSON
         try corrupt.write(to: store.stateURL)
-        let inboxFile = store.inboxURL.appendingPathComponent("elon.md")
+        let inboxFile = store.inboxURL.appendingPathComponent("ideas.md")
         try "- An idea".write(to: inboxFile, atomically: true, encoding: .utf8)
 
         let ws = Workspace(store: store)
@@ -154,7 +154,7 @@ struct PersistenceAndIdeasTests {
         expect(FileManager.default.fileExists(atPath: inboxFile.path), "inbox file must stay in inbox")
 
         // Recovery: once the file is valid again, a relaunch is writable and keeps the recovered data.
-        var good = AppState(); good.articles.append(Article(title: "Victor's draft", body: "kept"))
+        var good = AppState(); good.articles.append(Article(title: "My draft", body: "kept"))
         try store.save(good)
         let ws2 = Workspace(store: store)
         expect(ws2.isWritable && ws2.state.articles.first?.body == "kept")
@@ -264,13 +264,13 @@ struct SyncTests {
         let store = try tempStore()
         let v1 = """
         {"accountability":{"dailyGoal":300,"history":{"2026-11-20":120}},
-         "articles":[{"body":"Victor's words","created":"2026-11-21T22:38:27Z","id":"BC6ABB10-BF78-4598-86E0-4DFD648B664D","title":"Draft","updated":"2026-11-21T22:38:27Z"}],
-         "ideas":[{"added":"2026-11-21T22:38:27Z","done":false,"id":"B6769E3E-4F9F-47B6-A49B-269D13C27151","source":"elon.md","text":"An idea"}]}
+         "articles":[{"body":"My words","created":"2026-11-21T22:38:27Z","id":"BC6ABB10-BF78-4598-86E0-4DFD648B664D","title":"Draft","updated":"2026-11-21T22:38:27Z"}],
+         "ideas":[{"added":"2026-11-21T22:38:27Z","done":false,"id":"B6769E3E-4F9F-47B6-A49B-269D13C27151","source":"ideas.md","text":"An idea"}]}
         """
         try v1.write(to: store.stateURL, atomically: true, encoding: .utf8)
         let ws = Workspace(store: store)
         expect(ws.isWritable, ws.loadError ?? "")
-        expect(ws.state.articles.first?.body == "Victor's words" && ws.state.ideas.count == 1)
+        expect(ws.state.articles.first?.body == "My words" && ws.state.ideas.count == 1)
         expect(ws.state.accountability.byDevice[ws.deviceID]?["2026-11-20"] == 120, "legacy history moved to this Mac")
         expect(ws.state.accountability.history["2026-11-20"] == 120)
         expect(ws.state.accountability.dailyGoal == 300 && ws.state.accountability.goalUpdated != nil)
@@ -349,7 +349,7 @@ struct SyncTests {
         expect(try db.load() == AppState())
         var s = AppState()
         s.articles = [Article(title: "a", body: "b", created: t0)]
-        s.ideas = [Idea(text: "i", source: "elon.md", added: t0)]
+        s.ideas = [Idea(text: "i", source: "ideas.md", added: t0)]
         s.accountability.byDevice = ["A": ["2026-11-21": 3]]
         s.accountability.setGoal(250, at: t0)
         s.tombstones = ["X": t0]
@@ -409,9 +409,9 @@ struct SyncTests {
         expect(article(a, y.id) == nil, "deletion synced")
 
         // Ideas and goal sync too; read-only workspaces never sync.
-        try a.mutate { $0.ideas.append(Idea(text: "From Elon", source: "elon.md")); $0.accountability.setGoal(800) }
+        try a.mutate { $0.ideas.append(Idea(text: "From the inbox", source: "ideas.md")); $0.accountability.setGoal(800) }
         try sync(a, url); try sync(b, url)
-        expect(b.state.ideas.map(\.text) == ["From Elon"] && b.state.accountability.dailyGoal == 800)
+        expect(b.state.ideas.map(\.text) == ["From the inbox"] && b.state.accountability.dailyGoal == 800)
         let broken = try tempStore()
         try Data("{oops".utf8).write(to: broken.stateURL)
         var threw = false

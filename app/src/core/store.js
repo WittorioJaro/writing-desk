@@ -3,7 +3,7 @@
 //
 //   ~/Library/Application Support/WritingDesk/   (override with WRITING_DESK_HOME)
 //     state.json        articles, ideas, goal + per-Mac word history
-//     inbox/            drop .txt / .md files with ideas from Elon here
+//     inbox/            drop .txt / .md files with ideas here
 //     inbox/imported/   processed inbox files are moved here
 //     covers/           default PNG export folder
 //     device-id         random id for this Mac

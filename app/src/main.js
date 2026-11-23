@@ -173,7 +173,7 @@ function buildMenu() {
       { label: 'New Piece', accelerator: 'Cmd+N', click: () => command('new') },
       { label: 'Generate Covers…', accelerator: 'Cmd+K', click: () => command('covers') },
       { type: 'separator' },
-      { label: 'Check Elon’s Inbox', accelerator: 'Shift+Cmd+I', click: () => importInbox(true) },
+      { label: 'Check Ideas Inbox', accelerator: 'Shift+Cmd+I', click: () => importInbox(true) },
       { label: 'Open Inbox Folder', click: () => shell.openPath(ws.store.inboxDir) },
       { label: 'Show Data in Finder', click: () => shell.showItemInFolder(ws.store.stateFile) },
       { type: 'separator' }, { role: 'close' },
@@ -181,7 +181,7 @@ function buildMenu() {
     { role: 'editMenu' },
     { label: 'View', submenu: [
       { label: 'Your Writing', accelerator: 'Cmd+O', click: () => command('articles') },
-      { label: 'From Elon', accelerator: 'Cmd+I', click: () => command('prompts') },
+      { label: 'Prompts', accelerator: 'Cmd+I', click: () => command('prompts') },
       { label: 'Momentum', accelerator: 'Cmd+J', click: () => command('momentum') },
       { label: 'Focus', accelerator: 'Cmd+.', click: () => command('focus') },
       { type: 'separator' },

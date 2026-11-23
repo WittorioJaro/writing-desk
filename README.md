@@ -1,10 +1,10 @@
 # Writing Desk
 
-A quiet macOS writing desk for Victor: a large empty page, a daily goal, a streak that keeps you going, prompts from Elon, and offline 5:2 cover art. Built with Electron. Everything stays on your own Macs; the optional sync goes only to your own server over Tailscale.
+A quiet macOS writing desk: a large empty page, a daily goal, a streak that keeps you going, a prompts panel, and offline 5:2 cover art. Built with Electron. Everything stays on your own Macs; the optional sync goes only to your own server over Tailscale.
 
-- **The page**: title and body in a big serif on an empty canvas. Start typing and everything else fades away; move the mouse to bring it back. Autosaved as you type. Victor writes all article text: the app never generates or suggests any.
+- **The page**: title and body in a big serif on an empty canvas. Start typing and everything else fades away; move the mouse to bring it back. Autosaved as you type. You write all article text: the app never generates or suggests any.
 - **Momentum**: a thin ember line along the top fills toward today's goal. The chip bottom right shows today's words and your streak. Crossing the goal sets off the celebration: a ring draws itself, the streak number rolls up, embers burst and fly home to the streak flame. Milestones (3, 7, 14, 30, 50, 100, 365 days…) get a gold version. **⌘J** opens Momentum: a live flame that grows with your streak, today's ring, goal stepper, best streak, and a 20-week heat map where your current streak shimmers. Only *new* words count, so deleting text never lowers a day.
-- **From Elon** (**⌘I**): a side panel of prompts and things to think about, kept apart from your writing, with a check to mark each done. Ideas arrive from the inbox folder (below), live, with a badge for unseen ones, or can be added by hand.
+- **From the inbox** (**⌘I**): a side panel of prompts and things to think about, kept apart from your writing, with a check to mark each done. Ideas arrive from the inbox folder (below), live, with a badge for unseen ones, or can be added by hand.
 - **Covers** (**⌘K**): every cover is exactly **5:2** and has no text. Pick one with **Use as cover** and it sits at the top of the piece, above the title (hover it to change or remove it). **Export PNG** saves 3000×1200 (default folder `covers/`).
   - **Suggested by Codex**: once a piece has a title and about 60 words, and you pause writing, the app asks your own Codex CLI to paint three cover images for it with Codex's built-in image generation (no API key needed), in the background. The three run in parallel, one per art direction (bold geometric, atmospheric scene, symbolic object), and each appears as soon as it's done, usually within 30–40 s. When they're ready, a small notice slides down from the top; click it to see them. It suggests again when the title changes or the piece grows by ~200 words, and **Suggest again** does it on demand. Turn it off with the switch at the bottom of the Covers panel.
   - **Drawn from your words**: six offline styles (Bloom, Horizon, Orbit, Rhythm, Mosaic, Waves) built from the piece's keywords and sentence rhythm. **Shuffle** gives new compositions from the same words.
@@ -37,7 +37,7 @@ The server listens only on `127.0.0.1:8766`. `tailscale serve` publishes it to y
 
 **On every Mac (including the server Mac):** click the small dot in the top-right corner (or press ⌘,), enter `http://<mac-name>:8765`, and click **Turn on**. The app syncs at launch, every 30 seconds, and a few seconds after you stop typing. The dot turns green when synced, red on an error; the Sync panel shows the details.
 
-**What syncs:** articles, Elon's ideas (including done ticks), the daily goal, and the word history.
+**What syncs:** articles, prompts (including done ticks), the daily goal, and the word history.
 - **Word counts:** tracked per Mac, so writing on two Macs on the same day adds up instead of double counting.
 - **Deleting:** removing an article deletes it everywhere. If another Mac edited it after its last sync, though, that writing is kept.
 - **Conflicts:** if the same article was edited on two Macs between syncs, nothing is lost. The newer edit stays as the article, and the other version appears next to it as **"<title> (conflict copy)"**.
@@ -74,7 +74,7 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 | Path | What |
 |---|---|
 | `state.json` | articles, ideas, goal, daily word history |
-| `inbox/` | **Elon's ideas inbox**: drop `.txt` / `.md` files here |
+| `inbox/` | **Ideas inbox**: drop `.txt` / `.md` files here |
 | `inbox/imported/` | inbox files that have already been processed |
 | `covers/` | default PNG export folder |
 | `device-id` | random id for this Mac (keeps per-Mac word counts apart) |
@@ -85,7 +85,7 @@ Default root: `~/Library/Application Support/WritingDesk/`. Set `WRITING_DESK_HO
 
 ### Inbox format
 
-One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, whenever a file lands in the folder (it's watched), from **Check inbox** in the From Elon panel, or with ⇧⌘I. Files are handled one at a time: the ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. This save happens even when a file contains only duplicates, so a file is never archived while the ideas it repeats exist only in memory. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in a notice. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
+One idea per line. Leading `-`, `*`, `•` or `1.` bullets are stripped, lines starting with `#` are ignored, and case-insensitive duplicates are skipped. The inbox is read at launch, whenever a file lands in the folder (it's watched), from **Check inbox** in the Prompts panel, or with ⇧⌘I. Files are handled one at a time: the ideas are saved to `state.json` first, and only then is the file moved to `inbox/imported/`. This save happens even when a file contains only duplicates, so a file is never archived while the ideas it repeats exist only in memory. If a file can't be read, or its ideas can't be saved, the original stays in `inbox/` and the reason is shown in a notice. Files imported earlier in the same run stay saved. Retrying is safe: ideas that are already saved are skipped as duplicates, so a file whose move failed adds nothing the second time and is just moved.
 
 ```md
 # Ideas — 2026-11-21
@@ -102,8 +102,12 @@ If `state.json` exists but can't be read (for example, it's corrupted or was edi
 - Nothing is sent over the network except to the sync server you configure, and, while **Smart suggestions with Codex** is on, the **title and the opening (~180 words)** of a piece, which the Codex CLI sends to OpenAI under your own sign-in. Codex runs read-only in an empty temporary folder with `--ephemeral`, so it keeps no session. The window itself can only load local files (enforced by a content-security policy and a request filter).
 - Each Codex run works in an empty temporary folder (`-s workspace-write`, which image generation needs, and `--ephemeral`). Codex saves the image under `~/.codex/generated_images/`; the app accepts it only if it's a fresh PNG inside that folder, then moves it to `covers/suggested/<piece>/`. Images come back at 1983×793 (5:2); anything else is center-cropped to 5:2. Exports use the image's full resolution. The model defaults to `gpt-6-luna` with low reasoning (the image model does the painting), set in `covers.json`, because the default in this Mac's Codex config isn't available with a ChatGPT sign-in.
 - The chosen cover is stored per Mac, so it doesn't sync yet: the Swift sync server would drop fields it doesn't know.
-- The app never writes or suggests article text (Codex only paints pictures, and is told not to put any words in them). Elon's prompts live in their own panel and never touch your writing.
+- The app never writes or suggests article text (Codex only paints pictures, and is told not to put any words in them). Prompts live in their own panel and never touch your writing.
 - Data format is unchanged from v1, so the Swift sync server and older copies keep working. Dates stay as Apple reference-date seconds and article fingerprints are exact 64-bit values, so this app and the server agree on what changed.
 - `npx electron test/shots.js /tmp/shots` (in `app/`) saves screenshots of every view from a seeded test workspace; `SHOT_THEME=light` for light mode.
 - `npx electron test/trace.js /tmp/trace [scenario…]` (in `app/`) traces every animation frame by frame under a controlled clock (timers, `requestAnimationFrame`, CSS animations and the canvas embers all step together) and saves one contact sheet per scenario, e.g. `celebration`, `momentum-open`, `covers-shuffle`.
 - Ambient motion (the streak ember, the unseen-prompts dot, the goal-line shine) plays a few times and then rests, and everything pauses when the window isn't focused, so the app idles at ~0% CPU.
+
+## License
+
+[MIT](LICENSE)
